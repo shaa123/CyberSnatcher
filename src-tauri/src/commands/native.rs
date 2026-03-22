@@ -38,7 +38,7 @@ pub async fn native_download(
         let dm = app.state::<DownloadManager>();
         if let Ok(mut handles) = dm.handles.lock() {
             handles.remove(&job_id);
-        }
+        };
     }
 
     result
