@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { downloadDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar";
@@ -61,7 +61,6 @@ export default function App() {
   const [videoPlatform, setVideoPlatform] = useState("");
   const [videoPlatformColor, setVideoPlatformColor] = useState("#b400ff");
   const [history, setHistory] = useState<DownloadItem[]>([]);
-  const [log, setLog] = useState<{ msg: string; time: string }[]>([]);
   const [glitching, setGlitching] = useState(false);
   const [downloadFolder, setDownloadFolder] = useState("");
   const [currentJobId, setCurrentJobId] = useState("");
@@ -75,16 +74,7 @@ export default function App() {
   const [writeSubs, setWriteSubs] = useState(false);
   const [duplicateUrl, setDuplicateUrl] = useState<string | null>(null);
   const [smartMode, setSmartMode] = useState(true);
-  const logRef = useRef<HTMLDivElement>(null);
-
-  const addLog = useCallback((msg: string) => {
-    const time = new Date().toLocaleTimeString("en", { hour12: false });
-    setLog((prev) => [...prev, { msg, time }]);
-  }, []);
-
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [log]);
+  const addLog = useCallback((_msg: string) => {}, []);
 
   useEffect(() => {
     const iv = setInterval(() => {
@@ -184,7 +174,7 @@ export default function App() {
     setUrl(videoUrl);
     setVideoTitle(title);
     setPhase("downloading");
-    setLog([]);
+
     setProgress(0);
     setFilePath(null);
     setFileSize(null);
@@ -210,7 +200,7 @@ export default function App() {
     setUrl(videoUrl);
     setVideoTitle(title);
     setPhase("downloading");
-    setLog([]);
+
     setProgress(0);
     setFilePath(null);
     setFileSize(null);
@@ -269,7 +259,7 @@ export default function App() {
 
     if (isHls || isDirect) {
       setPhase("downloading");
-      setLog([]);
+  
       setProgress(0);
       setFilePath(null);
       setFileSize(null);
@@ -305,7 +295,7 @@ export default function App() {
 
   const probeWithYtdlp = useCallback(async () => {
     setPhase("fetching");
-    setLog([]);
+
     addLog("Initializing extraction sequence...");
 
     try {
@@ -371,7 +361,7 @@ export default function App() {
     setProgress(0);
     setSpeed("");
     setEta("");
-    setLog([]);
+
     setCurrentJobId("");
     setFormat("Default");
     setQualityIdx(2);
@@ -393,7 +383,7 @@ export default function App() {
     const isDirect = [".mp4", ".webm", ".mkv", ".avi", ".mov", ".ts"].some(ext => url.toLowerCase().includes(ext));
     if (isHls || isDirect) {
       setPhase("downloading");
-      setLog([]);
+  
       setProgress(0);
       setFilePath(null);
       setFileSize(null);
@@ -836,26 +826,6 @@ export default function App() {
               )}
             </div>
 
-            {/* System Log */}
-            {log.length > 0 && (
-              <div className="anim-float-in" style={{
-                background: "#050310", border: "1px solid #b400ff22", borderRadius: "3px",
-                padding: "14px 16px", marginBottom: "16px",
-              }}>
-                <div style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--purple)", marginBottom: "8px" }}>▸ SYSTEM LOG</div>
-                <div ref={logRef} style={{ maxHeight: "110px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
-                  {log.map((l, i) => (
-                    <div key={i} style={{ display: "flex", gap: "12px", fontSize: "17px" }}>
-                      <span style={{ color: "var(--text-dimmer)", flexShrink: 0 }}>{l.time}</span>
-                      <span style={{ color: l.msg.includes("ERR") || l.msg.includes("ERROR") ? "var(--red)" : l.msg.includes("✓") || l.msg.includes("COMPLETE") ? "#00ff88" : "var(--text-muted)" }}>{l.msg}</span>
-                    </div>
-                  ))}
-                  {(phase === "fetching" || phase === "downloading") && (
-                    <span className="anim-blink" style={{ display: "inline-block", width: "8px", height: "12px", background: "#b400ff", borderRadius: "1px", marginLeft: "2px" }} />
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Extraction History */}
             {history.length > 0 && (

@@ -5,17 +5,12 @@ import type { DownloadProgress } from "../lib/types";
 
 export function useDownloadEvents() {
   const updateItem = useDownloadStore((s) => s.updateItem);
-  const appendLog = useDownloadStore((s) => s.appendLog);
 
   useEffect(() => {
     const unlisten = listen<DownloadProgress>("download-progress", (event) => {
       const p = event.payload;
       // Browser tab handles its own download progress
       if (p.job_id?.startsWith("browser-")) return;
-
-      if (p.log_line) {
-        appendLog(p.job_id, p.log_line);
-      }
 
       if (p.status === "complete") {
         updateItem(p.job_id, { status: "complete", progress: 100, speed: "—", eta: "—" });
@@ -34,7 +29,7 @@ export function useDownloadEvents() {
     });
 
     return () => { unlisten.then((fn) => fn()); };
-  }, [updateItem, appendLog]);
+  }, [updateItem]);
 }
 
 export function useDownloads() {

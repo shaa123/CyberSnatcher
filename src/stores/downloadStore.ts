@@ -11,7 +11,6 @@ interface DownloadStore {
   setCustomFolders: (folders: string[]) => void;
   addItem: (item: DownloadItem) => void;
   updateItem: (id: string, updates: Partial<DownloadItem>) => void;
-  appendLog: (id: string, line: string) => void;
   removeItem: (id: string) => void;
 }
 
@@ -28,12 +27,6 @@ export const useDownloadStore = create<DownloadStore>((set) => ({
   updateItem: (id, updates) =>
     set((s) => ({
       items: s.items.map((i) => (i.id === id ? { ...i, ...updates } : i)),
-    })),
-  appendLog: (id, line) =>
-    set((s) => ({
-      items: s.items.map((i) =>
-        i.id === id ? { ...i, logs: [...i.logs, line] } : i
-      ),
     })),
   removeItem: (id) =>
     set((s) => ({

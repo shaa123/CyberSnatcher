@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useDownloadStore } from "../../stores/downloadStore";
-import { useDownloads } from "../../hooks/useDownloads";
 import { getBrowserSettings, setBrowserSettings } from "../../lib/tauri";
 
 interface SettingsModalProps {
@@ -11,16 +10,13 @@ interface SettingsModalProps {
 export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModalProps) {
   const downloadFolder = useDownloadStore((s) => s.downloadFolder);
   const setDownloadFolder = useDownloadStore((s) => s.setDownloadFolder);
-  const { items, selectedId } = useDownloads();
-  const [tab, setTab] = useState<"general" | "browser" | "logs">("general");
+  const [tab, setTab] = useState<"general" | "browser">("general");
   const [folderInput, setFolderInput] = useState(downloadFolder);
 
   // Browser settings state
   const [adblockEnabled, setAdblockEnabled] = useState(true);
   const [popupBlockerEnabled, setPopupBlockerEnabled] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-
-  const selectedItem = items.find((i) => i.id === selectedId);
 
   // Load browser settings from backend on mount
   useEffect(() => {
@@ -67,7 +63,7 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
 
         {/* Tabs */}
         <div className="flex border-b border-cyber-border shrink-0">
-          {(["general", "browser", "logs"] as const).map((t) => (
+          {(["general", "browser"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -230,38 +226,6 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
             </div>
           )}
 
-          {tab === "logs" && (
-            <div>
-              {selectedItem ? (
-                <>
-                  <p className="text-xs text-cyber-text-secondary mb-2 font-semibold">
-                    Logs for: {selectedItem.title}
-                  </p>
-                  <div className="bg-cyber-bg border border-cyber-border rounded-lg p-3 max-h-[300px] overflow-y-auto terminal-log">
-                    {selectedItem.logs.length === 0 ? (
-                      <span className="text-cyber-text-tertiary">No log output yet.</span>
-                    ) : (
-                      selectedItem.logs.map((line: string, i: number) => (
-                        <div key={i} className={
-                          line.includes("[download]") ? "log-success" :
-                          line.includes("[info]") ? "log-info" :
-                          line.includes("Error") || line.includes("error") ? "log-error" :
-                          ""
-                        }>{line}</div>
-                      ))
-                    )}
-                    {selectedItem.status === "downloading" && (
-                      <div className="text-cyber-text-tertiary mt-1"><span className="animate-pulse">&#9610;</span></div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="text-xs text-cyber-text-tertiary text-center py-8">
-                  Select a download to view its output log
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Footer */}
