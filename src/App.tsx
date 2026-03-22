@@ -1,0 +1,720 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { downloadDir } from "@tauri-apps/api/path";
+import { listen } from "@tauri-apps/api/event";
+import TitleBar from "./components/TitleBar";
+import BrowserTab from "./components/BrowserTab";
+import { analyzeUrl, startDownload, cancelDownload, checkYtdlp, checkFfmpeg, showInFolder, openFile, convertFile, nativeDownload, updateYtdlp, hideBrowser, showBrowser } from "./lib/tauri";
+import type { DownloadProgress, DownloadItem, ConversionPreset } from "./lib/types";
+
+const FORMATS = ["Default", "MP4", "MP3 Audio", "WEBM", "MKV"];
+const QUALITIES = ["2160p", "1440p", "1080p", "720p", "480p", "360p"];
+const PLATFORMS = [
+  { name: "YouTube", color: "#ff003c" },
+  { name: "Twitter/X", color: "#00f5ff" },
+  { name: "Instagram", color: "#b400ff" },
+  { name: "TikTok", color: "#00f5ff" },
+  { name: "Reddit", color: "#e040fb" },
+];
+
+function detectPlatform(u: string) {
+  if (u.includes("youtube") || u.includes("youtu.be")) return PLATFORMS[0];
+  if (u.includes("twitter") || u.includes("x.com")) return PLATFORMS[1];
+  if (u.includes("instagram")) return PLATFORMS[2];
+  if (u.includes("tiktok")) return PLATFORMS[3];
+  if (u.includes("reddit")) return PLATFORMS[4];
+  return null;
+}
+
+function formatToQuality(f: string, qualityIdx: number): string {
+  if (f.includes("Audio") || f.includes("MP3")) return "audio";
+  if (f === "Default") return "best";
+  const q = QUALITIES[qualityIdx];
+  return q || "best";
+}
+
+export default function App() {
+  // ── Tab state ──
+  const [activeTab, setActiveTab] = useState<"download" | "browser">("download");
+
+  // ── All existing state (unchanged) ──
+  const [url, setUrl] = useState("");
+  const [format, setFormat] = useState("Default");
+  const [qualityIdx, setQualityIdx] = useState(2);
+  const [phase, setPhase] = useState<"idle" | "fetching" | "ready" | "downloading" | "done" | "error">("idle");
+  const [progress, setProgress] = useState(0);
+  const [speed, setSpeed] = useState("");
+  const [eta, setEta] = useState("");
+  const [videoTitle, setVideoTitle] = useState("");
+  const [videoDuration, setVideoDuration] = useState("");
+  const [videoPlatform, setVideoPlatform] = useState("");
+  const [videoPlatformColor, setVideoPlatformColor] = useState("#b400ff");
+  const [history, setHistory] = useState<DownloadItem[]>([]);
+  const [log, setLog] = useState<{ msg: string; time: string }[]>([]);
+  const [glitching, setGlitching] = useState(false);
+  const [downloadFolder, setDownloadFolder] = useState("");
+  const [currentJobId, setCurrentJobId] = useState("");
+  const [ytdlpOk, setYtdlpOk] = useState(true);
+  const [ffmpegOk, setFfmpegOk] = useState(true);
+  const [converting, setConverting] = useState(false);
+  const [filePath, setFilePath] = useState<string | null>(null);
+  const [fileSize, setFileSize] = useState<number | null>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  const addLog = useCallback((msg: string) => {
+    const time = new Date().toLocaleTimeString("en", { hour12: false });
+    setLog((prev) => [...prev, { msg, time }]);
+  }, []);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [log]);
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setGlitching(true);
+      setTimeout(() => setGlitching(false), 300);
+    }, 7000);
+    return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    downloadDir().then(setDownloadFolder).catch(() => {});
+    checkYtdlp().then((ok) => {
+      setYtdlpOk(ok);
+      if (ok) {
+        updateYtdlp().then((msg) => {
+          if (msg && !msg.includes("up to date")) {
+            console.log("[yt-dlp update]", msg);
+          }
+        }).catch(() => {});
+      }
+    }).catch(() => setYtdlpOk(false));
+    checkFfmpeg().then(setFfmpegOk).catch(() => setFfmpegOk(false));
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<DownloadProgress>("download-progress", (event) => {
+      const p = event.payload;
+      if (p.job_id !== currentJobId && currentJobId) return;
+
+      if (p.log_line && !p.log_line.startsWith("CYBERPROG")) {
+        addLog(p.log_line);
+      }
+
+      if (p.status === "complete") {
+        setProgress(100);
+        setPhase("done");
+        if (p.file_path) setFilePath(p.file_path);
+        if (p.file_size) setFileSize(p.file_size);
+        addLog("EXTRACTION COMPLETE ✓");
+        setHistory((h) => [
+          { id: p.job_id, url, title: videoTitle || url, site_name: videoPlatform, status: "complete", progress: 100, speed: "", eta: "", outputDir: downloadFolder, quality: format, formatType: format, logs: [], filePath: p.file_path, fileSize: p.file_size, created_at: Date.now() },
+          ...h,
+        ]);
+      } else if (p.status === "error" || p.status === "cancelled") {
+        setPhase("error");
+        addLog(p.status === "cancelled" ? "CANCELLED BY USER" : `ERROR: ${p.log_line}`);
+        setTimeout(() => setPhase("idle"), 2500);
+      } else if (p.status === "converting") {
+        setProgress(99);
+        addLog("Merging audio/video tracks...");
+      } else if (p.percent >= 0) {
+        setProgress(p.percent);
+        if (p.speed) setSpeed(p.speed);
+        if (p.eta) setEta(p.eta);
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [currentJobId, addLog, url, videoTitle, videoPlatform, downloadFolder, format]);
+
+  // ── Tab switching: show/hide browser webview ──
+  useEffect(() => {
+    if (activeTab === "browser") {
+      showBrowser().catch(() => {});
+    } else {
+      hideBrowser().catch(() => {});
+    }
+  }, [activeTab]);
+
+  // ── Browser download callbacks ──
+  const handleBrowserDownloadDirect = useCallback(async (videoUrl: string, title: string) => {
+    setActiveTab("download");
+    setUrl(videoUrl);
+    setVideoTitle(title);
+    setPhase("downloading");
+    setLog([]);
+    setProgress(0);
+    setFilePath(null);
+    setFileSize(null);
+    const jobId = `dl-${Date.now()}`;
+    setCurrentJobId(jobId);
+    const safeName = title.replace(/[<>:"/\\|?*]/g, "_").slice(0, 100) || "download";
+    addLog(`Browser capture → downloading ${safeName}...`);
+    try {
+      const result = await nativeDownload(jobId, videoUrl, downloadFolder, safeName);
+      setFilePath(result);
+      setProgress(100);
+      setPhase("done");
+      addLog("EXTRACTION COMPLETE ✓");
+    } catch (e) {
+      addLog(`ERR: ${e}`);
+      setPhase("error");
+      setTimeout(() => setPhase("idle"), 2500);
+    }
+  }, [downloadFolder, addLog]);
+
+  const handleBrowserDownloadNative = useCallback(async (videoUrl: string, title: string) => {
+    setActiveTab("download");
+    setUrl(videoUrl);
+    setVideoTitle(title);
+    setPhase("downloading");
+    setLog([]);
+    setProgress(0);
+    setFilePath(null);
+    setFileSize(null);
+    const jobId = `dl-${Date.now()}`;
+    setCurrentJobId(jobId);
+    const safeName = title.replace(/[<>:"/\\|?*]/g, "_").slice(0, 100) || "download";
+    addLog(`Browser capture → downloading stream ${safeName}...`);
+    try {
+      const result = await nativeDownload(jobId, videoUrl, downloadFolder, safeName);
+      setFilePath(result);
+      setProgress(100);
+      setPhase("done");
+      addLog("EXTRACTION COMPLETE ✓");
+    } catch (e) {
+      const errStr = String(e);
+      if (errStr === "USE_YTDLP") {
+        addLog("Falling back to yt-dlp...");
+        try {
+          await startDownload(jobId, videoUrl, safeName, downloadFolder, "best", "Default");
+        } catch (e2) {
+          addLog(`ERR: ${e2}`);
+          setPhase("error");
+          setTimeout(() => setPhase("idle"), 2500);
+        }
+      } else {
+        addLog(`ERR: ${e}`);
+        setPhase("error");
+        setTimeout(() => setPhase("idle"), 2500);
+      }
+    }
+  }, [downloadFolder, addLog]);
+
+  const handleProbe = useCallback(async () => {
+    if (!url.trim()) {
+      setPhase("error");
+      addLog("ERR: No target URL provided.");
+      setTimeout(() => setPhase("idle"), 1500);
+      return;
+    }
+
+    const isHls = url.includes(".m3u8");
+    const isDirect = [".mp4", ".webm", ".mkv", ".avi", ".mov", ".ts"].some(ext => url.toLowerCase().includes(ext));
+
+    if (isHls || isDirect) {
+      setPhase("downloading");
+      setLog([]);
+      setProgress(0);
+      setFilePath(null);
+      setFileSize(null);
+      const jobId = `dl-${Date.now()}`;
+      setCurrentJobId(jobId);
+      const safeName = url.split("/").pop()?.split("?")[0]?.replace(/[<>:"/\\|?*]/g, "_") || "download";
+      setVideoTitle(safeName);
+      addLog(isHls ? "HLS stream detected — routing to native engine..." : "Direct file detected — downloading...");
+
+      try {
+        const result = await nativeDownload(jobId, url, downloadFolder, safeName);
+        setFilePath(result);
+        setFileSize(null);
+        setProgress(100);
+        setPhase("done");
+        addLog("EXTRACTION COMPLETE ✓");
+      } catch (e) {
+        const errStr = String(e);
+        if (errStr === "USE_YTDLP") {
+          addLog("Native engine deferred — falling back to yt-dlp...");
+          await probeWithYtdlp();
+        } else {
+          addLog(`ERR: ${e}`);
+          setPhase("error");
+          setTimeout(() => setPhase("idle"), 2500);
+        }
+      }
+      return;
+    }
+
+    await probeWithYtdlp();
+  }, [url, addLog, downloadFolder]);
+
+  const probeWithYtdlp = useCallback(async () => {
+    setPhase("fetching");
+    setLog([]);
+    addLog("Initializing extraction sequence...");
+
+    try {
+      const analysis = await analyzeUrl(url);
+      const platform = detectPlatform(url);
+      setVideoTitle(analysis.title || "Unknown Target");
+      setVideoDuration(analysis.duration || "—");
+      setVideoPlatform(platform?.name || analysis.site_name || "Unknown");
+      setVideoPlatformColor(platform?.color || "#b400ff");
+      addLog("Metadata acquired. Target locked.");
+      setPhase("ready");
+    } catch (e) {
+      addLog(`ERR: ${e}`);
+      setPhase("error");
+      setTimeout(() => setPhase("idle"), 2000);
+    }
+  }, [url, addLog]);
+
+  const handleExtract = useCallback(async () => {
+    setPhase("downloading");
+    setProgress(0);
+    setSpeed("");
+    setEta("");
+    setFilePath(null);
+    setFileSize(null);
+    const jobId = `dl-${Date.now()}`;
+    setCurrentJobId(jobId);
+    addLog(`Initiating ${format} extraction...`);
+
+    try {
+      await startDownload(jobId, url, videoTitle || url, downloadFolder, formatToQuality(format, qualityIdx), format);
+    } catch (e) {
+      addLog(`ERR: ${e}`);
+      setPhase("error");
+    }
+  }, [url, format, qualityIdx, downloadFolder, addLog, videoTitle]);
+
+  const handleCancel = useCallback(() => {
+    if (currentJobId) cancelDownload(currentJobId);
+  }, [currentJobId]);
+
+  const handleConvert = useCallback(async (preset: ConversionPreset) => {
+    if (!filePath) return;
+    const convJobId = `conv-${Date.now()}`;
+    setConverting(true);
+    setCurrentJobId(convJobId);
+    addLog(`Starting conversion: ${preset.type}...`);
+    try {
+      const result = await convertFile(convJobId, filePath, preset);
+      setFilePath(result);
+      setConverting(false);
+      addLog("Conversion complete ✓");
+    } catch (e) {
+      addLog(`Conversion error: ${e}`);
+      setConverting(false);
+    }
+  }, [filePath, addLog]);
+
+  const reset = () => {
+    setPhase("idle");
+    setUrl("");
+    setVideoTitle("");
+    setProgress(0);
+    setSpeed("");
+    setEta("");
+    setLog([]);
+    setCurrentJobId("");
+    setFormat("Default");
+    setQualityIdx(2);
+    setFilePath(null);
+    setFileSize(null);
+  };
+
+  const platform = detectPlatform(url);
+
+  return (
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", position: "relative", overflow: "hidden" }}>
+      <TitleBar />
+
+      {/* Background effects */}
+      <div className="noise-overlay" />
+      <div className="grid-bg" />
+      <div className="scanline" />
+      <div style={{ position: "fixed", top: "-100px", right: "-100px", width: "400px", height: "400px", borderRadius: "50%", background: "radial-gradient(circle, #b400ff18 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+      <div style={{ position: "fixed", bottom: "-150px", left: "-150px", width: "500px", height: "500px", borderRadius: "50%", background: "radial-gradient(circle, #00f5ff12 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+
+      {/* ── TAB BAR ── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: "0",
+        borderBottom: "1px solid var(--border-purple)",
+        background: "var(--panel)", flexShrink: 0,
+        position: "relative", zIndex: 2,
+        paddingLeft: "12px",
+      }}>
+        {(["download", "browser"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              padding: "10px 24px",
+              background: activeTab === tab ? "#b400ff15" : "transparent",
+              border: "none",
+              borderBottom: activeTab === tab ? "2px solid #b400ff" : "2px solid transparent",
+              color: activeTab === tab ? "#e040fb" : "var(--text-dim)",
+              fontFamily: "'Orbitron', sans-serif",
+              fontSize: "11px",
+              fontWeight: 700,
+              letterSpacing: "3px",
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            {tab === "download" ? "◈ DOWNLOAD" : "◈ BROWSER"}
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        {activeTab === "browser" && (
+          <span style={{
+            fontSize: "9px", color: "var(--text-dimmer)", letterSpacing: "1px",
+            marginRight: "12px",
+          }}>
+            Videos auto-detected while browsing
+          </span>
+        )}
+      </div>
+
+      {/* ── BROWSER TAB ── */}
+      <BrowserTab
+        visible={activeTab === "browser"}
+        downloadFolder={downloadFolder}
+        onDownloadDirect={handleBrowserDownloadDirect}
+        onDownloadNative={handleBrowserDownloadNative}
+      />
+
+      {/* ── DOWNLOAD TAB (existing UI, unchanged) ── */}
+      {activeTab === "download" && (
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>
+          <div style={{ width: "100%", maxWidth: "700px" }}>
+
+            {/* Header */}
+            <div className="anim-float-in" style={{ textAlign: "center", marginBottom: "28px" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
+                <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+                  <polygon points="16,2 30,10 30,22 16,30 2,22 2,10" fill="none" stroke="#b400ff" strokeWidth="1.5" />
+                  <polygon points="16,8 24,12 24,20 16,24 8,20 8,12" fill="#b400ff22" stroke="#00f5ff" strokeWidth="1" />
+                  <circle cx="16" cy="16" r="3" fill="#00f5ff" />
+                </svg>
+                <h1 style={{
+                  fontFamily: "'Orbitron', sans-serif", fontSize: "32px", fontWeight: 900, margin: 0,
+                  background: "linear-gradient(135deg, #b400ff 0%, #e040fb 40%, #00f5ff 100%)",
+                  WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                  letterSpacing: "4px",
+                  animation: glitching ? "glitch 0.3s steps(2) both" : "flicker 8s infinite",
+                }}>CYBERSNATCHER</h1>
+              </div>
+              <p style={{ color: "var(--text-dim)", fontSize: "17px", letterSpacing: "3px" }}>
+                NEURAL VIDEO EXTRACTION SYSTEM v2.7
+              </p>
+            </div>
+
+            {/* Main Panel */}
+            <div className="corner-accents anim-pulse-border" style={{
+              background: "linear-gradient(145deg, var(--panel) 0%, var(--panel-alt) 100%)",
+              border: "1px solid var(--border-purple)", borderRadius: "4px",
+              padding: "30px", marginBottom: "16px",
+              animation: "pulse-border 4s ease-in-out infinite, float-in 0.6s ease both",
+            }}>
+              <div style={{ position: "absolute", bottom: "-1px", left: "-1px", width: "14px", height: "14px", borderBottom: "2px solid var(--cyan)", borderLeft: "2px solid var(--cyan)" }} />
+              <div style={{ position: "absolute", bottom: "-1px", right: "-1px", width: "14px", height: "14px", borderBottom: "2px solid var(--cyan)", borderRight: "2px solid var(--cyan)" }} />
+
+              {/* URL Input */}
+              <label style={{ display: "block", fontSize: "17px", letterSpacing: "3px", color: "var(--purple)", marginBottom: "8px" }}>
+                ▸ TARGET URL
+              </label>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+                <div style={{ position: "relative", flex: 1 }}>
+                  {platform && (
+                    <span style={{
+                      position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)",
+                      width: "8px", height: "8px", borderRadius: "50%",
+                      background: platform.color, boxShadow: `0 0 8px ${platform.color}`,
+                      animation: "badge-pop 0.3s ease both",
+                    }} />
+                  )}
+                  <input
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleProbe()}
+                    placeholder="https://..."
+                    disabled={phase === "downloading" || phase === "fetching"}
+                    style={{
+                      width: "100%", background: "var(--input-bg)",
+                      border: `1px solid ${phase === "error" ? "var(--red)" : "var(--border-purple)"}`,
+                      borderRadius: "3px", padding: `14px ${platform ? "14px" : "14px"} 10px ${platform ? "30px" : "14px"}`,
+                      color: "var(--text)", fontFamily: "'Share Tech Mono', monospace", fontSize: "17px",
+                      transition: "border-color 0.2s, box-shadow 0.2s",
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={handleProbe}
+                  disabled={phase === "fetching" || phase === "downloading"}
+                  style={{
+                    background: "linear-gradient(135deg, #b400ff22, #7700cc22)",
+                    border: "1px solid #b400ff", borderRadius: "3px", color: "#e040fb",
+                    fontFamily: "'Orbitron', sans-serif", fontSize: "17px", fontWeight: 700,
+                    letterSpacing: "2px", padding: "0 24px", cursor: "pointer",
+                    whiteSpace: "nowrap", opacity: (phase === "fetching" || phase === "downloading") ? 0.5 : 1,
+                  }}
+                >
+                  {phase === "fetching" ? "PROBING..." : "PROBE"}
+                </button>
+              </div>
+
+              {/* Format selector */}
+              <label style={{ display: "block", fontSize: "17px", letterSpacing: "3px", color: "var(--purple)", marginBottom: "8px" }}>
+                ▸ OUTPUT FORMAT
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
+                {FORMATS.map((f) => (
+                  <button key={f} onClick={() => setFormat(f)} style={{
+                    background: format === f ? "#b400ff22" : "transparent",
+                    border: `1px solid ${format === f ? "#b400ff" : "var(--border-dim)"}`,
+                    borderRadius: "3px", color: format === f ? "#e040fb" : "var(--text-dim)",
+                    fontFamily: "'Share Tech Mono', monospace", fontSize: "17px",
+                    padding: "8px 18px", cursor: "pointer", transition: "all 0.2s",
+                    boxShadow: format === f ? "0 0 10px #b400ff30" : "none", letterSpacing: "1px",
+                  }}>{f}</button>
+                ))}
+              </div>
+
+              {/* Quality slider */}
+              {format !== "MP3 Audio" && (
+                <div style={{ marginBottom: "18px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <label style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--purple)" }}>
+                      ▸ QUALITY
+                    </label>
+                    <span style={{ fontSize: "17px", color: "#00f5ff", fontWeight: 700, letterSpacing: "1px", fontFamily: "'Share Tech Mono', monospace" }}>
+                      {format === "Default" ? `${QUALITIES[qualityIdx]} (max)` : QUALITIES[qualityIdx]}
+                    </span>
+                  </div>
+                  <div style={{ position: "relative", padding: "4px 0" }}>
+                    <input
+                      type="range"
+                      min={0}
+                      max={QUALITIES.length - 1}
+                      value={qualityIdx}
+                      onChange={(e) => setQualityIdx(Number(e.target.value))}
+                      style={{
+                        width: "100%", height: "4px", appearance: "none", WebkitAppearance: "none",
+                        background: `linear-gradient(90deg, #00f5ff ${((qualityIdx) / (QUALITIES.length - 1)) * 100}%, var(--border-dim) ${((qualityIdx) / (QUALITIES.length - 1)) * 100}%)`,
+                        borderRadius: "2px", outline: "none", cursor: "pointer",
+                      }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px" }}>
+                      {QUALITIES.map((q, i) => (
+                        <span key={q} style={{
+                          fontSize: "14px", color: i === qualityIdx ? "#00f5ff" : "var(--text-dimmer)",
+                          letterSpacing: "0.5px", transition: "color 0.2s",
+                          cursor: "pointer", userSelect: "none",
+                        }} onClick={() => setQualityIdx(i)}>{q}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Video meta card */}
+              {videoTitle && phase !== "idle" && phase !== "fetching" && (
+                <div className="anim-float-in" style={{
+                  background: "var(--input-bg)", border: "1px solid #00f5ff33", borderRadius: "3px",
+                  padding: "12px 14px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px",
+                  boxShadow: "0 0 20px #00f5ff15",
+                }}>
+                  <div style={{
+                    width: "48px", height: "34px", borderRadius: "2px", flexShrink: 0,
+                    background: "linear-gradient(135deg, #b400ff44, #00f5ff22)",
+                    border: "1px solid #00f5ff33", display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#00f5ff88"><path d="M8 5v14l11-7z" /></svg>
+                  </div>
+                  <div style={{ flex: 1, overflow: "hidden" }}>
+                    <div style={{ fontSize: "17px", color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{videoTitle}</div>
+                    <div style={{ display: "flex", gap: "12px", marginTop: "3px" }}>
+                      <span style={{ fontSize: "17px", color: "var(--text-dim)" }}>⏱ {videoDuration}</span>
+                      <span style={{ fontSize: "17px", color: videoPlatformColor, letterSpacing: "1px" }}>◈ {videoPlatform}</span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: "17px", color: "#00f5ff", letterSpacing: "2px", border: "1px solid #00f5ff44", padding: "4px 12px", borderRadius: "3px" }}>LOCKED</span>
+                </div>
+              )}
+
+              {/* Progress bar */}
+              {(phase === "downloading" || phase === "done") && (
+                <div className="anim-float-in" style={{ marginBottom: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
+                    <span style={{ fontSize: "17px", color: "#00f5ff", letterSpacing: "2px" }}>
+                      {phase === "done" ? "COMPLETE" : "EXTRACTING"}
+                      {speed && phase === "downloading" ? ` · ${speed}` : ""}
+                      {eta && phase === "downloading" ? ` · ETA ${eta}` : ""}
+                    </span>
+                    <span style={{ fontSize: "17px", color: "#00f5ff", fontWeight: 700 }}>{Math.round(progress)}%</span>
+                  </div>
+                  <div className="cyber-progress-track">
+                    <div className="cyber-progress-bar" style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  onClick={phase === "done" ? reset : phase === "ready" ? handleExtract : undefined}
+                  disabled={phase === "idle" || phase === "fetching" || phase === "downloading" || phase === "error"}
+                  style={{
+                    flex: 1, padding: "16px",
+                    background: phase === "done" ? "linear-gradient(135deg, #00f5ff22, #00f5ff11)" : "linear-gradient(135deg, #b400ff33, #7700cc22)",
+                    border: `1px solid ${phase === "done" ? "#00f5ff" : "#b400ff"}`,
+                    borderRadius: "3px", color: phase === "done" ? "#00f5ff" : "#e040fb",
+                    fontFamily: "'Orbitron', sans-serif", fontWeight: 700, fontSize: "17px", letterSpacing: "3px",
+                    cursor: (phase === "ready" || phase === "done") ? "pointer" : "not-allowed",
+                    opacity: (phase === "idle" || phase === "fetching" || phase === "downloading") ? 0.5 : 1,
+                    animation: phase === "ready" ? "pulse-cyan 2s infinite" : "none",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {phase === "idle" && "◈ AWAIT TARGET"}
+                  {phase === "fetching" && "◈ PROBING TARGET..."}
+                  {phase === "ready" && "▶ EXTRACT NOW"}
+                  {phase === "downloading" && `◈ EXTRACTING ${Math.round(progress)}%`}
+                  {phase === "done" && "✓ COMPLETE — RESET"}
+                  {phase === "error" && "✕ ERROR"}
+                </button>
+                {phase === "downloading" && (
+                  <button onClick={handleCancel} style={{
+                    padding: "16px 24px", background: "#ff003c22", border: "1px solid #ff003c66",
+                    borderRadius: "3px", color: "#ff003c", fontFamily: "'Orbitron', sans-serif",
+                    fontWeight: 700, fontSize: "17px", letterSpacing: "2px", cursor: "pointer",
+                  }}>ABORT</button>
+                )}
+              </div>
+
+              {/* Completion actions */}
+              {phase === "done" && filePath && !converting && (
+                <div className="anim-float-in" style={{ marginTop: "10px" }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                    <button onClick={() => openFile(filePath)} style={{
+                      padding: "10px 18px", background: "#00f5ff11", border: "1px solid #00f5ff44",
+                      borderRadius: "3px", color: "#00f5ff", fontFamily: "'Share Tech Mono', monospace",
+                      fontSize: "14px", cursor: "pointer", letterSpacing: "1px", transition: "all 0.2s",
+                    }}>▶ OPEN FILE</button>
+                    <button onClick={() => showInFolder(filePath)} style={{
+                      padding: "10px 18px", background: "#b400ff11", border: "1px solid #b400ff44",
+                      borderRadius: "3px", color: "#e040fb", fontFamily: "'Share Tech Mono', monospace",
+                      fontSize: "14px", cursor: "pointer", letterSpacing: "1px", transition: "all 0.2s",
+                    }}>◈ SHOW IN FOLDER</button>
+                    {fileSize && (
+                      <span style={{ fontSize: "14px", color: "var(--text-dim)", marginLeft: "auto", letterSpacing: "1px" }}>
+                        {fileSize > 1073741824 ? `${(fileSize / 1073741824).toFixed(2)} GB` : `${(fileSize / 1048576).toFixed(1)} MB`}
+                      </span>
+                    )}
+                  </div>
+                  {ffmpegOk && (
+                    <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "12px", color: "var(--text-dim)", letterSpacing: "2px", alignSelf: "center", marginRight: "4px" }}>CONVERT:</span>
+                      {([
+                        { label: "MP4", preset: { type: "ToMp4" } as ConversionPreset },
+                        { label: "MKV", preset: { type: "ToMkv" } as ConversionPreset },
+                        { label: "H.265", preset: { type: "ToMp4H265" } as ConversionPreset },
+                        { label: "720p", preset: { type: "Compress720p" } as ConversionPreset },
+                        { label: "480p", preset: { type: "Compress480p" } as ConversionPreset },
+                      ]).map(({ label, preset }) => (
+                        <button key={label} onClick={() => handleConvert(preset)} style={{
+                          padding: "5px 10px", background: "transparent", border: "1px solid var(--border-dim)",
+                          borderRadius: "2px", color: "var(--text-dim)", fontFamily: "'Share Tech Mono', monospace",
+                          fontSize: "11px", cursor: "pointer", transition: "all 0.2s", letterSpacing: "1px",
+                        }}>{label}</button>
+                      ))}
+                      <span style={{ fontSize: "12px", color: "var(--text-dim)", letterSpacing: "2px", alignSelf: "center", margin: "0 4px" }}>AUDIO:</span>
+                      {([
+                        { label: "MP3", preset: { type: "ToMp3", bitrate: 320 } as ConversionPreset },
+                        { label: "FLAC", preset: { type: "ToFlac" } as ConversionPreset },
+                        { label: "WAV", preset: { type: "ToWav" } as ConversionPreset },
+                      ]).map(({ label, preset }) => (
+                        <button key={label} onClick={() => handleConvert(preset)} style={{
+                          padding: "5px 10px", background: "transparent", border: "1px solid #00f5ff33",
+                          borderRadius: "2px", color: "#00f5ff88", fontFamily: "'Share Tech Mono', monospace",
+                          fontSize: "11px", cursor: "pointer", transition: "all 0.2s", letterSpacing: "1px",
+                        }}>{label}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {converting && (
+                <div className="anim-float-in" style={{ marginTop: "10px", padding: "12px", background: "var(--input-bg)", border: "1px solid #b400ff44", borderRadius: "3px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "14px", color: "#b400ff", letterSpacing: "2px" }}>CONVERTING...</span>
+                    <span style={{ fontSize: "14px", color: "#b400ff", fontWeight: 700 }}>{Math.round(progress)}%</span>
+                  </div>
+                  <div className="cyber-progress-track">
+                    <div className="cyber-progress-bar" style={{ width: `${progress}%`, background: "linear-gradient(90deg, #b400ff, #e040fb)" }} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* System Log */}
+            {log.length > 0 && (
+              <div className="anim-float-in" style={{
+                background: "#050310", border: "1px solid #b400ff22", borderRadius: "3px",
+                padding: "14px 16px", marginBottom: "16px",
+              }}>
+                <div style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--purple)", marginBottom: "8px" }}>▸ SYSTEM LOG</div>
+                <div ref={logRef} style={{ maxHeight: "110px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
+                  {log.map((l, i) => (
+                    <div key={i} style={{ display: "flex", gap: "12px", fontSize: "17px" }}>
+                      <span style={{ color: "var(--text-dimmer)", flexShrink: 0 }}>{l.time}</span>
+                      <span style={{ color: l.msg.includes("ERR") || l.msg.includes("ERROR") ? "var(--red)" : l.msg.includes("✓") || l.msg.includes("COMPLETE") ? "#00ff88" : "var(--text-muted)" }}>{l.msg}</span>
+                    </div>
+                  ))}
+                  {(phase === "fetching" || phase === "downloading") && (
+                    <span className="anim-blink" style={{ display: "inline-block", width: "8px", height: "12px", background: "#b400ff", borderRadius: "1px", marginLeft: "2px" }} />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Extraction History */}
+            {history.length > 0 && (
+              <div className="anim-float-in" style={{
+                background: "linear-gradient(145deg, var(--panel), var(--panel-alt))",
+                border: "1px solid #3a2a5555", borderRadius: "4px", padding: "18px 20px",
+              }}>
+                <div style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--text-dim)", marginBottom: "12px" }}>▸ EXTRACTION HISTORY</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {history.map((h, i) => (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "center", gap: "10px",
+                      padding: "8px 10px", background: "#0a061422", border: "1px solid #3a2a5533", borderRadius: "2px",
+                      animation: i === 0 ? "float-in 0.4s ease both" : "none",
+                    }}>
+                      <div style={{ width: "6px", height: "8px", borderRadius: "50%", background: "#00f5ff", boxShadow: "0 0 8px #00f5ff", flexShrink: 0 }} />
+                      <div style={{ flex: 1, overflow: "hidden" }}>
+                        <div style={{ fontSize: "17px", color: "#c084fc", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.title}</div>
+                        <div style={{ fontSize: "17px", color: "var(--text-dimmer)", marginTop: "2px" }}>{h.quality} · {h.site_name}</div>
+                      </div>
+                      <span style={{ fontSize: "17px", color: "#00f5ff", letterSpacing: "1px", flexShrink: 0 }}>✓ DONE</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div style={{ textAlign: "center", marginTop: "20px" }}>
+              <p style={{ fontSize: "17px", color: "#2a1e3a", letterSpacing: "2px" }}>
+                CYBERSNATCHER · POWERED BY yt-dlp + ffmpeg · TAURI 2.x
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
