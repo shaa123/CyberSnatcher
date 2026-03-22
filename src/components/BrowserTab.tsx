@@ -531,9 +531,11 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
         )}
       </div>
 
-      {/* ── Crop overlay for recording ── */}
+      {/* ── Crop overlay for recording (inside main area, below toolbar) ── */}
       {cropping && (
-        <CropOverlay rect={cropRect} onRectChange={setCropRect} />
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90, pointerEvents: "none" }}>
+          <CropOverlay rect={cropRect} onRectChange={setCropRect} onClose={() => setCropping(false)} />
+        </div>
       )}
 
       {/* ── HLS Quality picker modal ── */}
@@ -582,7 +584,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
 
 interface CropRect { x: number; y: number; w: number; h: number }
 
-function CropOverlay({ rect, onRectChange }: { rect: CropRect; onRectChange: (r: CropRect) => void }) {
+function CropOverlay({ rect, onRectChange, onClose }: { rect: CropRect; onRectChange: (r: CropRect) => void; onClose: () => void }) {
   const dragging = useRef<{ type: string; startX: number; startY: number; startRect: CropRect } | null>(null);
 
   const onPointerDown = useCallback((e: React.PointerEvent, type: string) => {
@@ -628,7 +630,7 @@ function CropOverlay({ rect, onRectChange }: { rect: CropRect; onRectChange: (r:
 
   return (
     <div
-      style={{ position: "absolute", inset: 0, zIndex: 90 }}
+      style={{ position: "absolute", inset: 0, zIndex: 90, pointerEvents: "auto" }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
@@ -673,19 +675,34 @@ function CropOverlay({ rect, onRectChange }: { rect: CropRect; onRectChange: (r:
           {Math.round(rect.w)} × {Math.round(rect.h)}
         </div>
 
-        {/* REC indicator */}
+        {/* REC indicator + STOP button */}
         <div style={{
-          position: "absolute", top: 6, left: 8,
-          display: "flex", alignItems: "center", gap: "5px",
-          fontSize: "9px", color: "#ff4444", fontFamily: "'Orbitron', sans-serif",
-          letterSpacing: "2px", fontWeight: 700,
+          position: "absolute", top: 6, left: 8, right: 8,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          zIndex: 4,
         }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: "50%",
-            background: "#ff4444", boxShadow: "0 0 8px #ff4444",
-            animation: "blink-rec 1s infinite",
-          }} />
-          REC
+          <div style={{
+            display: "flex", alignItems: "center", gap: "5px",
+            fontSize: "9px", color: "#ff4444", fontFamily: "'Orbitron', sans-serif",
+            letterSpacing: "2px", fontWeight: 700,
+          }}>
+            <span style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: "#ff4444", boxShadow: "0 0 8px #ff4444",
+              animation: "blink-rec 1s infinite",
+            }} />
+            REC
+          </div>
+          <button
+            onPointerDown={(e) => { e.stopPropagation(); onClose(); }}
+            style={{
+              background: "#ff4444", border: "none", borderRadius: "3px",
+              color: "#fff", fontFamily: "'Orbitron', sans-serif",
+              fontSize: "8px", fontWeight: 700, letterSpacing: "1px",
+              padding: "3px 10px", cursor: "pointer",
+              boxShadow: "0 0 8px #ff444466",
+            }}
+          >⏹ STOP</button>
         </div>
       </div>
 
