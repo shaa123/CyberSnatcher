@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   openBrowserView,
   navigateBrowser,
@@ -146,16 +147,20 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   }, [browserOpen, visible, updatePosition]);
 
   // ── Recording: convert crop rect to screen coords ──
-  const getCropScreenCoords = useCallback(() => {
+  const getCropScreenCoords = useCallback(async () => {
     const el = overlayRef.current;
     if (!el) return { x: 0, y: 0, w: 400, h: 300 };
     const bounds = el.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    const win = getCurrentWindow();
+    const scaleFactor = await win.scaleFactor();
+    const winPos = await win.outerPosition();
+    // winPos is in physical pixels, bounds are in CSS pixels
     return {
-      x: (bounds.left + cropRect.x) * dpr,
-      y: (bounds.top + cropRect.y) * dpr,
-      w: cropRect.w * dpr,
-      h: cropRect.h * dpr,
+      x: winPos.x + (bounds.left + cropRect.x) * scaleFactor,
+      y: winPos.y + (bounds.top + cropRect.y) * scaleFactor,
+      w: cropRect.w * scaleFactor,
+      h: cropRect.h * scaleFactor,
     };
   }, [cropRect]);
 
@@ -166,7 +171,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     hideBrowser().catch(() => {});
     // Wait a tick for the overlay to mount so overlayRef is available
     await new Promise((r) => setTimeout(r, 50));
-    const coords = getCropScreenCoords();
+    const coords = await getCropScreenCoords();
     try {
       await startRecording(coords.x, coords.y, coords.w, coords.h);
     } catch (e) {
@@ -192,8 +197,9 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   // Send region updates to backend when crop rect changes during recording
   useEffect(() => {
     if (!recording) return;
-    const coords = getCropScreenCoords();
-    updateRecordingRegion(coords.x, coords.y, coords.w, coords.h).catch(() => {});
+    getCropScreenCoords().then((coords) => {
+      updateRecordingRegion(coords.x, coords.y, coords.w, coords.h).catch(() => {});
+    });
   }, [recording, cropRect, getCropScreenCoords]);
 
   // ── Navigation ──
@@ -379,9 +385,11 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           const el = viewportRef.current;
           if (el) {
             const b = el.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
+            const win = getCurrentWindow();
+            const sf = await win.scaleFactor();
+            const wp = await win.outerPosition();
             try {
-              const src = await capturePreview(b.left * dpr, b.top * dpr, b.width * dpr, b.height * dpr);
+              const src = await capturePreview(wp.x + b.left * sf, wp.y + b.top * sf, b.width * sf, b.height * sf);
               setPreviewSrc(src);
             } catch { /* continue without preview */ }
           }
@@ -625,7 +633,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           alignItems: "center", gap: "10px", maxWidth: "90%",
         }}>
           <span style={{ color: "#00ff88", fontSize: "12px", fontFamily: "'Orbitron', sans-serif" }}>
-            GIF SAVED
+            RECORDING SAVED
           </span>
           <span style={{ color: "#aaa", fontSize: "11px", fontFamily: "'Share Tech Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {recordingResult}
