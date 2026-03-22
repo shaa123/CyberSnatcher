@@ -22,7 +22,7 @@ import {
   removeDetectedVideo,
   startRecording,
   stopRecording,
-  capturePreview,
+  openCropOverlay,
 } from "../lib/tauri";
 import type { DetectedVideo } from "../lib/types";
 import type { HlsQuality } from "../lib/tauri";
@@ -60,9 +60,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   const [activeJob, setActiveJob] = useState<DownloadJob | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordingResult, setRecordingResult] = useState<string | null>(null);
-  const [cropMode, setCropMode] = useState(false);
-  const [previewImg, setPreviewImg] = useState<string | null>(null);
-  const [cropRect, setCropRect] = useState({ x: 50, y: 50, w: 0, h: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
 
   // ── Show/hide browser webview when tab switches ──
@@ -144,66 +141,40 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     return () => { observer.disconnect(); window.removeEventListener("resize", updatePosition); };
   }, [browserOpen, visible, updatePosition]);
 
-  // ── Recording: enter crop mode ──
-  const handleEnterCropMode = useCallback(async () => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const bounds = el.getBoundingClientRect();
-    // Default crop: full viewport with 50px margin
-    const margin = 50;
-    setCropRect({
-      x: margin,
-      y: margin,
-      w: Math.max(100, bounds.width - margin * 2),
-      h: Math.max(100, bounds.height - margin * 2),
-    });
-    // Hide browser so DOM overlay is visible, then capture screenshot
-    await hideBrowser();
-    try {
-      const win = getCurrentWindow();
-      const sf = await win.scaleFactor();
-      const winPos = await win.outerPosition();
-      const sx = winPos.x + bounds.left * sf;
-      const sy = winPos.y + bounds.top * sf;
-      const sw = bounds.width * sf;
-      const sh = bounds.height * sf;
-      const dataUrl = await capturePreview(sx, sy, sw, sh);
-      setPreviewImg(dataUrl);
-    } catch { /* preview is optional */ }
-    setCropMode(true);
-  }, []);
-
-  const handleCancelCrop = useCallback(async () => {
-    setCropMode(false);
-    setPreviewImg(null);
-    await showBrowser().catch(() => {});
-  }, []);
-
-  const handleStartFromCrop = useCallback(async () => {
+  // ── Recording: open transparent overlay window for crop selection ──
+  const handleOpenCropOverlay = useCallback(async () => {
     const el = viewportRef.current;
     if (!el) return;
     const bounds = el.getBoundingClientRect();
     const win = getCurrentWindow();
-    const sf = await win.scaleFactor();
+    const scaleFactor = await win.scaleFactor();
     const winPos = await win.outerPosition();
-    // Map crop rect (relative to viewport div) to physical screen coords
-    const sx = winPos.x + (bounds.left + cropRect.x) * sf;
-    const sy = winPos.y + (bounds.top + cropRect.y) * sf;
-    const sw = cropRect.w * sf;
-    const sh = cropRect.h * sf;
+    // Convert to logical screen coordinates for the overlay window position
+    const x = (winPos.x / scaleFactor) + bounds.left;
+    const y = (winPos.y / scaleFactor) + bounds.top;
+    await openCropOverlay(x, y, bounds.width, bounds.height);
+  }, []);
 
-    setCropMode(false);
-    setPreviewImg(null);
-    setRecordingResult(null);
-    setRecording(true);
-    await showBrowser().catch(() => {});
-    try {
-      await startRecording(sx, sy, sw, sh);
-    } catch (err) {
-      console.error("Failed to start recording:", err);
-      setRecording(false);
-    }
-  }, [cropRect]);
+  // ── Listen for overlay window events ──
+  useEffect(() => {
+    const unsubs: Promise<() => void>[] = [];
+
+    unsubs.push(
+      listen<{ x: number; y: number; w: number; h: number }>("overlay-start-recording", async (e) => {
+        const { x, y, w, h } = e.payload;
+        setRecordingResult(null);
+        setRecording(true);
+        try {
+          await startRecording(x, y, w, h);
+        } catch (err) {
+          console.error("Failed to start recording:", err);
+          setRecording(false);
+        }
+      })
+    );
+
+    return () => { unsubs.forEach((p) => p.then((fn) => fn())); };
+  }, []);
 
   const handleStopRecording = useCallback(async () => {
     setRecording(false);
@@ -394,7 +365,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap",
         }}>GO</button>
 
-        <button onClick={recording ? handleStopRecording : handleEnterCropMode} style={{
+        <button onClick={recording ? handleStopRecording : handleOpenCropOverlay} style={{
           background: recording ? "linear-gradient(135deg, #ff444433, #cc000022)" : "linear-gradient(135deg, #ff222211, #88000011)",
           border: `1px solid ${recording ? "#ff4444" : "#ff444466"}`, borderRadius: "3px",
           color: recording ? "#ff6666" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
@@ -414,7 +385,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
             background: browserOpen ? "transparent" : "var(--panel)",
           }}
         >
-          {!browserOpen && !cropMode && (
+          {!browserOpen && (
             <div style={{
               display: "flex", flexDirection: "column", alignItems: "center",
               justifyContent: "center", height: "100%", gap: "12px",
@@ -427,15 +398,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
                 Videos will be auto-detected as you browse
               </p>
             </div>
-          )}
-          {cropMode && (
-            <CropOverlay
-              previewImg={previewImg}
-              cropRect={cropRect}
-              onCropChange={setCropRect}
-              onStart={handleStartFromCrop}
-              onCancel={handleCancelCrop}
-            />
           )}
         </div>
 
@@ -682,155 +644,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Resizable crop overlay (DOM-based, shown when browser webview is hidden) ──
-
-interface CropOverlayProps {
-  previewImg: string | null;
-  cropRect: { x: number; y: number; w: number; h: number };
-  onCropChange: (r: { x: number; y: number; w: number; h: number }) => void;
-  onStart: () => void;
-  onCancel: () => void;
-}
-
-function CropOverlay({ previewImg, cropRect, onCropChange, onStart, onCancel }: CropOverlayProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef<{
-    type: string;
-    startX: number; startY: number;
-    startRect: { x: number; y: number; w: number; h: number };
-  } | null>(null);
-
-  const MIN = 80;
-
-  const onPointerDown = useCallback((type: string) => (e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragging.current = { type, startX: e.clientX, startY: e.clientY, startRect: { ...cropRect } };
-  }, [cropRect]);
-
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      const d = dragging.current;
-      if (!d) return;
-      const container = containerRef.current;
-      if (!container) return;
-      const bounds = container.getBoundingClientRect();
-      const dx = e.clientX - d.startX;
-      const dy = e.clientY - d.startY;
-      let { x, y, w, h } = d.startRect;
-
-      if (d.type === "move") {
-        x = Math.max(0, Math.min(bounds.width - w, x + dx));
-        y = Math.max(0, Math.min(bounds.height - h, y + dy));
-      } else {
-        if (d.type.includes("n")) { y = y + dy; h = Math.max(MIN, h - dy); }
-        if (d.type.includes("s")) { h = Math.max(MIN, h + dy); }
-        if (d.type.includes("w")) { x = x + dx; w = Math.max(MIN, w - dx); }
-        if (d.type.includes("e")) { w = Math.max(MIN, w + dx); }
-        // Clamp to container
-        if (x < 0) { w += x; x = 0; }
-        if (y < 0) { h += y; y = 0; }
-        w = Math.min(w, bounds.width - x);
-        h = Math.min(h, bounds.height - y);
-      }
-      onCropChange({ x, y, w, h });
-    };
-    const onUp = () => { dragging.current = null; };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
-  }, [onCropChange]);
-
-  const { x, y, w, h } = cropRect;
-
-  return (
-    <div ref={containerRef} style={{ position: "absolute", inset: 0, zIndex: 50, overflow: "hidden" }}>
-      {/* Screenshot preview background */}
-      {previewImg && (
-        <img src={previewImg} alt="" style={{
-          position: "absolute", inset: 0, width: "100%", height: "100%",
-          objectFit: "fill", pointerEvents: "none", opacity: 0.7,
-        }} />
-      )}
-      {!previewImg && (
-        <div style={{ position: "absolute", inset: 0, background: "#0a0614" }} />
-      )}
-
-      {/* Dark mask around crop area (4 rectangles) */}
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: y, background: "rgba(0,0,0,0.6)" }} />
-      <div style={{ position: "absolute", top: y + h, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)" }} />
-      <div style={{ position: "absolute", top: y, left: 0, width: x, height: h, background: "rgba(0,0,0,0.6)" }} />
-      <div style={{ position: "absolute", top: y, left: x + w, right: 0, height: h, background: "rgba(0,0,0,0.6)" }} />
-
-      {/* Crop rectangle border */}
-      <div style={{
-        position: "absolute", left: x, top: y, width: w, height: h,
-        border: "2px solid #ff4444", boxShadow: "0 0 15px #ff444466, inset 0 0 15px #ff444411",
-      }}>
-        {/* Move handle (center area) */}
-        <div onPointerDown={onPointerDown("move")} style={{
-          position: "absolute", inset: 14, cursor: "move",
-        }} />
-
-        {/* Corner handles */}
-        {(["nw", "ne", "sw", "se"] as const).map(dir => (
-          <div key={dir} onPointerDown={onPointerDown(dir)} style={{
-            position: "absolute",
-            ...(dir.includes("n") ? { top: -5 } : { bottom: -5 }),
-            ...(dir.includes("w") ? { left: -5 } : { right: -5 }),
-            width: 12, height: 12, background: "#ff4444", borderRadius: 2,
-            cursor: `${dir}-resize`, boxShadow: "0 0 6px #ff4444",
-          }} />
-        ))}
-
-        {/* Edge handles */}
-        <div onPointerDown={onPointerDown("n")} style={{ position: "absolute", top: -4, left: "25%", width: "50%", height: 8, cursor: "n-resize", background: "#ff4444", borderRadius: 2, boxShadow: "0 0 4px #ff4444" }} />
-        <div onPointerDown={onPointerDown("s")} style={{ position: "absolute", bottom: -4, left: "25%", width: "50%", height: 8, cursor: "s-resize", background: "#ff4444", borderRadius: 2, boxShadow: "0 0 4px #ff4444" }} />
-        <div onPointerDown={onPointerDown("w")} style={{ position: "absolute", left: -4, top: "25%", width: 8, height: "50%", cursor: "w-resize", background: "#ff4444", borderRadius: 2, boxShadow: "0 0 4px #ff4444" }} />
-        <div onPointerDown={onPointerDown("e")} style={{ position: "absolute", right: -4, top: "25%", width: 8, height: "50%", cursor: "e-resize", background: "#ff4444", borderRadius: 2, boxShadow: "0 0 4px #ff4444" }} />
-
-        {/* Size label */}
-        <div style={{
-          position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)",
-          fontSize: 11, color: "#ff6666", fontWeight: 700, letterSpacing: 1,
-          background: "#0a0614ee", padding: "3px 10px", borderRadius: 2,
-          border: "1px solid #ff444444", fontFamily: "'Orbitron', sans-serif",
-          whiteSpace: "nowrap",
-        }}>
-          {Math.round(w)} x {Math.round(h)}
-        </div>
-
-        {/* Top bar buttons */}
-        <div style={{
-          position: "absolute", top: 6, left: 8, right: 8,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <span style={{
-            fontSize: 10, color: "#ff4444", letterSpacing: 2,
-            fontWeight: 700, fontFamily: "'Orbitron', sans-serif",
-          }}>SELECT AREA</span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={onStart} style={{
-              border: "none", borderRadius: 3, background: "#ff4444",
-              color: "#fff", fontFamily: "'Orbitron', sans-serif",
-              fontSize: 9, fontWeight: 700, letterSpacing: 1,
-              padding: "5px 14px", cursor: "pointer",
-              boxShadow: "0 0 10px #ff444466",
-            }}>START</button>
-            <button onClick={onCancel} style={{
-              border: "none", borderRadius: 3, background: "#666",
-              color: "#fff", fontFamily: "'Orbitron', sans-serif",
-              fontSize: 9, fontWeight: 700, letterSpacing: 1,
-              padding: "5px 14px", cursor: "pointer",
-            }}>CANCEL</button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

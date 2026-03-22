@@ -23,6 +23,7 @@ pub async fn open_crop_overlay(
     .position(x, y)
     .decorations(false)
     .transparent(true)
+    .shadow(false) // required on Windows for transparency to work (v2 enables shadows by default)
     .always_on_top(true)
     .resizable(false) // we handle resize ourselves via pointer events
     .skip_taskbar(true);
