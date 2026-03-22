@@ -44,5 +44,5 @@ jobs:
             PR_NUMBER="$EXISTING_PR"
           fi
 
-          # Auto-merge the PR
-          gh pr merge "$PR_NUMBER" --merge --auto
+          # Merge the PR immediately
+          gh pr merge "$PR_NUMBER" --merge --delete-branch
