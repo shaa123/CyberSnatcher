@@ -34,7 +34,7 @@ pub async fn download_url(
         if url.to_lowercase().contains(ext) {
             log::info!("Routing to direct downloader: {}", url);
             let output_path = format!("{}/{}{}", output_dir, filename, ext);
-            return direct::download_direct(app, job_id, url, page_url, &output_path, cancelled).await;
+            return direct::download_direct(app, job_id, url, page_url, cookies, &output_path, cancelled).await;
         }
     }
 
