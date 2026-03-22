@@ -8,7 +8,6 @@ mod types;
 mod ytdlp;
 
 use commands::browser::BrowserState;
-use commands::recording::RecordingState;
 use types::DownloadManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -20,7 +19,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(DownloadManager::new())
         .manage(BrowserState::new())
-        .manage(RecordingState::new())
         .invoke_handler(tauri::generate_handler![
             // Existing commands
             commands::analyze::analyze_url,
@@ -54,14 +52,6 @@ pub fn run() {
             commands::browser::hide_browser,
             commands::browser::get_browser_cookies,
             commands::browser::remove_detected_video,
-            // Recording commands
-            commands::recording::start_recording,
-            commands::recording::stop_recording,
-            commands::recording::update_recording_region,
-            commands::recording::capture_preview,
-            // Overlay commands
-            commands::overlay::open_crop_overlay,
-            commands::overlay::close_crop_overlay,
             // Stream commands
             commands::stream::parse_hls,
             commands::stream::download_hls_stream,

@@ -68,24 +68,6 @@ export const getBrowserCookies = (url: string) =>
 export const removeDetectedVideo = (url: string) =>
   invoke<void>("remove_detected_video", { url });
 
-// ── Recording commands ───────────────────────────────────────────────────────
-
-export const startRecording = (x: number, y: number, w: number, h: number) =>
-  invoke<void>("start_recording", { x, y, w, h });
-
-export const stopRecording = () => invoke<string>("stop_recording");
-
-export const updateRecordingRegion = (x: number, y: number, w: number, h: number) =>
-  invoke<void>("update_recording_region", { x, y, w, h });
-
-export const capturePreview = (x: number, y: number, w: number, h: number) =>
-  invoke<string>("capture_preview", { x, y, w, h });
-
-export const openCropOverlay = (x: number, y: number, width: number, height: number) =>
-  invoke<void>("open_crop_overlay", { x, y, width, height });
-
-export const closeCropOverlay = () =>
-  invoke<void>("close_crop_overlay");
 
 // ── HLS stream commands ──────────────────────────────────────────────────────
 

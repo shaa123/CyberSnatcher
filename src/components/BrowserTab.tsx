@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   openBrowserView,
   navigateBrowser,
@@ -20,9 +19,6 @@ import {
   nativeDownload,
   getBrowserCookies,
   removeDetectedVideo,
-  startRecording,
-  stopRecording,
-  openCropOverlay,
 } from "../lib/tauri";
 import type { DetectedVideo } from "../lib/types";
 import type { HlsQuality } from "../lib/tauri";
@@ -58,8 +54,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   const [hlsPendingPageUrl, setHlsPendingPageUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<DownloadJob | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [recordingResult, setRecordingResult] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   // ── Show/hide browser webview when tab switches ──
@@ -140,51 +134,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     updatePosition();
     return () => { observer.disconnect(); window.removeEventListener("resize", updatePosition); };
   }, [browserOpen, visible, updatePosition]);
-
-  // ── Recording: open transparent overlay window for crop selection ──
-  const handleOpenCropOverlay = useCallback(async () => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const bounds = el.getBoundingClientRect();
-    const win = getCurrentWindow();
-    const scaleFactor = await win.scaleFactor();
-    const winPos = await win.outerPosition();
-    // Convert to logical screen coordinates for the overlay window position
-    const x = (winPos.x / scaleFactor) + bounds.left;
-    const y = (winPos.y / scaleFactor) + bounds.top;
-    await openCropOverlay(x, y, bounds.width, bounds.height);
-  }, []);
-
-  // ── Listen for overlay window events ──
-  useEffect(() => {
-    const unsubs: Promise<() => void>[] = [];
-
-    unsubs.push(
-      listen<{ x: number; y: number; w: number; h: number }>("overlay-start-recording", async (e) => {
-        const { x, y, w, h } = e.payload;
-        setRecordingResult(null);
-        setRecording(true);
-        try {
-          await startRecording(x, y, w, h);
-        } catch (err) {
-          console.error("Failed to start recording:", err);
-          setRecording(false);
-        }
-      })
-    );
-
-    return () => { unsubs.forEach((p) => p.then((fn) => fn())); };
-  }, []);
-
-  const handleStopRecording = useCallback(async () => {
-    setRecording(false);
-    try {
-      const path = await stopRecording();
-      setRecordingResult(path);
-    } catch (e) {
-      console.error("Failed to stop recording:", e);
-    }
-  }, []);
 
   // ── Navigation ──
   const handleGo = useCallback(async () => {
@@ -364,14 +313,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           fontSize: "11px", fontWeight: 700, letterSpacing: "2px",
           padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap",
         }}>GO</button>
-
-        <button onClick={recording ? handleStopRecording : handleOpenCropOverlay} style={{
-          background: recording ? "linear-gradient(135deg, #ff444433, #cc000022)" : "linear-gradient(135deg, #ff222211, #88000011)",
-          border: `1px solid ${recording ? "#ff4444" : "#ff444466"}`, borderRadius: "3px",
-          color: recording ? "#ff6666" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
-          fontSize: "11px", fontWeight: 700, letterSpacing: "2px",
-          padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap",
-        }}>{recording ? "⏹ STOP" : "⏺ REC"}</button>
       </div>
 
       {/* ── Main area: browser viewport + side panel ── */}
@@ -579,32 +520,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           </div>
         )}
       </div>
-
-      {/* ── Recording result toast ── */}
-      {recordingResult && (
-        <div style={{
-          position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
-          zIndex: 100, background: "#0a0a1a", border: "1px solid #00f5ff66",
-          borderRadius: "6px", padding: "10px 16px", display: "flex",
-          alignItems: "center", gap: "10px", maxWidth: "90%",
-        }}>
-          <span style={{ color: "#00ff88", fontSize: "12px", fontFamily: "'Orbitron', sans-serif" }}>
-            RECORDING SAVED
-          </span>
-          <span style={{ color: "#aaa", fontSize: "11px", fontFamily: "'Share Tech Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {recordingResult}
-          </span>
-          <button onClick={() => { import("../lib/tauri").then(m => m.showInFolder(recordingResult!)); }} style={{
-            background: "none", border: "1px solid #00f5ff44", borderRadius: "3px",
-            color: "#00f5ff", fontSize: "10px", padding: "3px 8px", cursor: "pointer",
-            fontFamily: "'Orbitron', sans-serif",
-          }}>SHOW</button>
-          <button onClick={() => setRecordingResult(null)} style={{
-            background: "none", border: "none", color: "#666", fontSize: "14px",
-            cursor: "pointer", padding: "0 4px",
-          }}>×</button>
-        </div>
-      )}
 
       {/* ── HLS Quality picker modal ── */}
       {hlsQualities && (
