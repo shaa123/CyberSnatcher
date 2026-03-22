@@ -22,6 +22,7 @@ pub async fn start_download(
     output_dir: String,
     format_quality: String,
     format_type: String,
+    write_subs: Option<bool>,
 ) -> Result<(), String> {
     let bin = resolve_ytdlp_path(&app)?;
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -38,9 +39,10 @@ pub async fn start_download(
 
     let app_clone = app.clone();
     let jid = job_id.clone();
+    let subs = write_subs.unwrap_or(false);
 
     std::thread::spawn(move || {
-        run_download(app_clone, jid, bin.to_string_lossy().to_string(), url, title, output_dir, format_quality, format_type, cancelled);
+        run_download(app_clone, jid, bin.to_string_lossy().to_string(), url, title, output_dir, format_quality, format_type, subs, cancelled);
     });
 
     Ok(())
@@ -55,6 +57,7 @@ fn run_download(
     output_dir: String,
     format_quality: String,
     format_type: String,
+    write_subs: bool,
     cancelled: Arc<AtomicBool>,
 ) {
     // Build output template
@@ -102,6 +105,15 @@ fn run_download(
     if !format_type.is_empty() && format_type != "Default" && format_quality != "audio" {
         args.push("--merge-output-format".to_string());
         args.push(format_type.to_lowercase());
+    }
+
+    // Subtitle download
+    if write_subs {
+        args.push("--write-subs".to_string());
+        args.push("--write-auto-subs".to_string());
+        args.push("--sub-langs".to_string());
+        args.push("all".to_string());
+        args.push("--embed-subs".to_string());
     }
 
     args.push(url.clone());
