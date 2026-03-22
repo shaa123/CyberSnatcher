@@ -95,14 +95,38 @@ fn ensure_server(app: &AppHandle) -> u16 {
 }
 
 fn handle_request(mut stream: std::net::TcpStream, app: &AppHandle) {
-    let mut buf = vec![0u8; 2 * 1024 * 1024]; // 2MB read buffer
-    let n = stream.read(&mut buf).unwrap_or(0);
-    if n == 0 { return; }
+    // ── Phase 1: read headers until \r\n\r\n ─────────────────────────────────
+    let mut header_buf: Vec<u8> = Vec::with_capacity(8 * 1024);
+    let mut tmp = [0u8; 4096];
+    loop {
+        match stream.read(&mut tmp) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => header_buf.extend_from_slice(&tmp[..n]),
+        }
+        if header_buf.len() > 64 * 1024 { return; } // headers too large
+        if find_header_end(&header_buf).is_some() { break; }
+    }
 
-    let request = String::from_utf8_lossy(&buf[..n]).to_string();
-    let first_line = request.lines().next().unwrap_or("");
+    let header_end = match find_header_end(&header_buf) {
+        Some(pos) => pos,
+        None => return,
+    };
 
-    // ── Route: GET /report?data=... (URL detection) ──
+    let header_str = String::from_utf8_lossy(&header_buf[..header_end]).to_string();
+    let first_line = header_str.lines().next().unwrap_or("");
+
+    // Parse Content-Length from headers
+    let content_length: usize = header_str
+        .lines()
+        .find(|l| l.to_ascii_lowercase().starts_with("content-length:"))
+        .and_then(|l| l.splitn(2, ':').nth(1))
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0);
+
+    // Bytes of body already read during header phase
+    let body_pre = header_buf.len() - header_end;
+
+    // ── Route: GET /report?data=... (URL detection) ──────────────────────────
     if first_line.starts_with("GET") && first_line.contains("/report?data=") {
         if let Some(encoded) = first_line
             .split("/report?data=")
@@ -114,12 +138,10 @@ fn handle_request(mut stream: std::net::TcpStream, app: &AppHandle) {
                 let state = app.state::<BrowserState>();
                 let mut detected = state.detected.lock().unwrap();
                 if !detected.iter().any(|v| v.url == video.url) {
-                    // HLS/DASH always get added (we can't HEAD-check a playlist)
                     if video.video_type == "hls" || video.video_type == "dash" {
                         detected.push(video.clone());
                         let _ = app.emit("browser-video-detected", &video);
                     } else {
-                        // For direct videos, spawn a HEAD request to get size
                         let video_clone = video.clone();
                         let app_clone = app.clone();
                         std::thread::spawn(move || {
@@ -133,103 +155,8 @@ fn handle_request(mut stream: std::net::TcpStream, app: &AppHandle) {
         return;
     }
 
-    // ── Route: POST /capture-start (MSE stream started) ──
-    if first_line.starts_with("POST") && first_line.contains("/capture-start") {
-        if let Some(body) = extract_body(&request) {
-            if let Ok(info) = serde_json::from_str::<CaptureStartInfo>(&body) {
-                let state = app.state::<BrowserState>();
-                let dl_folder = state.download_folder.lock().unwrap().clone();
-
-                let ext = if info.mime_type.contains("webm") { "webm" } else { "mp4" };
-                let safe_title = sanitize(&info.page_title);
-                let filename = format!("{}_{}.{}", safe_title, &info.id[..6.min(info.id.len())], ext);
-                let path = std::path::Path::new(&dl_folder).join(&filename);
-                let path_str = path.to_string_lossy().to_string();
-
-                match File::create(&path) {
-                    Ok(file) => {
-                        let mut captures = state.captures.lock().unwrap();
-                        captures.insert(info.id.clone(), CaptureState {
-                            file,
-                            path: path_str,
-                            mime_type: info.mime_type,
-                            total_bytes: 0,
-                            page_title: info.page_title,
-                            page_url: info.page_url,
-                        });
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to create capture file: {}", e);
-                    }
-                }
-            }
-        }
-        send_ok(&mut stream);
-        return;
-    }
-
-    // ── Route: POST /capture-chunk (MSE chunk data — binary after headers) ──
-    if first_line.starts_with("POST") && first_line.contains("/capture-chunk") {
-        // Extract capture ID from query string
-        let capture_id = first_line
-            .split("/capture-chunk?id=")
-            .nth(1)
-            .and_then(|s| s.split(' ').next())
-            .unwrap_or("")
-            .to_string();
-
-        // Find the body (binary data after \r\n\r\n)
-        if let Some(header_end) = find_header_end(&buf[..n]) {
-            let body_bytes = &buf[header_end..n];
-
-            if !capture_id.is_empty() && !body_bytes.is_empty() {
-                let state = app.state::<BrowserState>();
-                let mut captures = state.captures.lock().unwrap();
-                if let Some(cap) = captures.get_mut(&capture_id) {
-                    let _ = cap.file.write_all(body_bytes);
-                    cap.total_bytes += body_bytes.len() as u64;
-                }
-            }
-        }
-        send_ok(&mut stream);
-        return;
-    }
-
-    // ── Route: POST /capture-end (MSE stream finished) ──
-    if first_line.starts_with("POST") && first_line.contains("/capture-end") {
-        if let Some(body) = extract_body(&request) {
-            if let Ok(info) = serde_json::from_str::<CaptureEndInfo>(&body) {
-                let state = app.state::<BrowserState>();
-                let mut captures = state.captures.lock().unwrap();
-                if let Some(cap) = captures.remove(&info.id) {
-                    // Flush and drop the file handle
-                    drop(cap.file);
-
-                    let video = DetectedVideo {
-                        url: format!("capture://{}", info.id),
-                        video_type: "capture".to_string(),
-                        label: if cap.mime_type.contains("webm") { "WEBM".to_string() } else { "MP4".to_string() },
-                        page_url: cap.page_url,
-                        page_title: cap.page_title.clone(),
-                        file_path: Some(cap.path.clone()),
-                        file_size: Some(cap.total_bytes),
-                        cookies: None,
-                    };
-
-                    let mut detected = state.detected.lock().unwrap();
-                    detected.push(video.clone());
-                    let _ = app.emit("browser-video-detected", &video);
-                    let _ = app.emit("browser-capture-complete", &video);
-                }
-            }
-        }
-        send_ok(&mut stream);
-        return;
-    }
-
-    // ── Route: POST /blob-save (blob video — full binary payload) ──
+    // ── Route: POST /blob-save — stream directly to disk (body can be 100MB+)
     if first_line.starts_with("POST") && first_line.contains("/blob-save") {
-        // Extract mime and title from query
         let qs = first_line
             .split("/blob-save?")
             .nth(1)
@@ -240,42 +167,159 @@ fn handle_request(mut stream: std::net::TcpStream, app: &AppHandle) {
         let title = params.get("title").cloned().unwrap_or_else(|| "blob_video".to_string());
         let page_url = params.get("url").cloned().unwrap_or_default();
 
-        if let Some(header_end) = find_header_end(&buf[..n]) {
-            let body_bytes = &buf[header_end..n];
-            if body_bytes.len() > 1024 * 1024 { // Only save if > 1MB
-                let state = app.state::<BrowserState>();
-                let dl_folder = state.download_folder.lock().unwrap().clone();
+        if content_length > 1024 * 1024 {
+            let state = app.state::<BrowserState>();
+            let dl_folder = state.download_folder.lock().unwrap().clone();
 
-                let ext = if mime.contains("webm") { "webm" } else { "mp4" };
-                let safe_title = sanitize(&title);
-                let ts = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis();
-                let filename = format!("{}_{}.{}", safe_title, ts % 100000, ext);
-                let path = std::path::Path::new(&dl_folder).join(&filename);
-                let path_str = path.to_string_lossy().to_string();
+            let ext = if mime.contains("webm") { "webm" } else { "mp4" };
+            let safe_title = sanitize(&title);
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let filename = format!("{}_{}.{}", safe_title, ts % 100000, ext);
+            let path = std::path::Path::new(&dl_folder).join(&filename);
+            let path_str = path.to_string_lossy().to_string();
 
-                if let Ok(mut file) = File::create(&path) {
-                    let _ = file.write_all(body_bytes);
-                    drop(file);
-
-                    let video = DetectedVideo {
-                        url: format!("blob://{}", ts),
-                        video_type: "capture".to_string(),
-                        label: ext.to_uppercase(),
-                        page_url,
-                        page_title: title,
-                        file_path: Some(path_str),
-                        file_size: Some(body_bytes.len() as u64),
-                        cookies: None,
-                    };
-
-                    let mut detected = state.detected.lock().unwrap();
-                    detected.push(video.clone());
-                    let _ = app.emit("browser-video-detected", &video);
-                    let _ = app.emit("browser-capture-complete", &video);
+            if let Ok(mut file) = File::create(&path) {
+                // Write any body bytes already read during header phase
+                if body_pre > 0 {
+                    let _ = file.write_all(&header_buf[header_end..]);
                 }
+                // Stream remaining body to disk in 256KB chunks
+                let mut remaining = content_length.saturating_sub(body_pre);
+                let mut chunk = vec![0u8; 256 * 1024];
+                while remaining > 0 {
+                    let to_read = remaining.min(chunk.len());
+                    match stream.read(&mut chunk[..to_read]) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            let _ = file.write_all(&chunk[..n]);
+                            remaining = remaining.saturating_sub(n);
+                        }
+                    }
+                }
+                drop(file);
+
+                let saved_bytes = content_length as u64;
+                let video = DetectedVideo {
+                    url: format!("blob://{}", ts),
+                    video_type: "capture".to_string(),
+                    label: ext.to_uppercase(),
+                    page_url,
+                    page_title: title,
+                    file_path: Some(path_str),
+                    file_size: Some(saved_bytes),
+                    cookies: None,
+                };
+
+                let mut detected = state.detected.lock().unwrap();
+                detected.push(video.clone());
+                let _ = app.emit("browser-video-detected", &video);
+                let _ = app.emit("browser-capture-complete", &video);
+            }
+        }
+        send_ok(&mut stream);
+        return;
+    }
+
+    // ── Phase 2: read full body for remaining POST routes ────────────────────
+    let body_bytes: Vec<u8> = if content_length > 0 {
+        let mut body = Vec::with_capacity(content_length);
+        // Include bytes already read during header phase
+        if body_pre > 0 {
+            body.extend_from_slice(&header_buf[header_end..]);
+        }
+        let mut tmp2 = [0u8; 64 * 1024];
+        while body.len() < content_length {
+            let to_read = (content_length - body.len()).min(tmp2.len());
+            match stream.read(&mut tmp2[..to_read]) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => body.extend_from_slice(&tmp2[..n]),
+            }
+        }
+        body
+    } else {
+        Vec::new()
+    };
+
+    // ── Route: POST /capture-start (MSE stream started) ──
+    if first_line.starts_with("POST") && first_line.contains("/capture-start") {
+        if let Ok(info) = serde_json::from_slice::<CaptureStartInfo>(&body_bytes) {
+            let state = app.state::<BrowserState>();
+            let dl_folder = state.download_folder.lock().unwrap().clone();
+
+            let ext = if info.mime_type.contains("webm") { "webm" } else { "mp4" };
+            let safe_title = sanitize(&info.page_title);
+            let filename = format!("{}_{}.{}", safe_title, &info.id[..6.min(info.id.len())], ext);
+            let path = std::path::Path::new(&dl_folder).join(&filename);
+            let path_str = path.to_string_lossy().to_string();
+
+            match File::create(&path) {
+                Ok(file) => {
+                    let mut captures = state.captures.lock().unwrap();
+                    captures.insert(info.id.clone(), CaptureState {
+                        file,
+                        path: path_str,
+                        mime_type: info.mime_type,
+                        total_bytes: 0,
+                        page_title: info.page_title,
+                        page_url: info.page_url,
+                    });
+                }
+                Err(e) => {
+                    eprintln!("Failed to create capture file: {}", e);
+                }
+            }
+        }
+        send_ok(&mut stream);
+        return;
+    }
+
+    // ── Route: POST /capture-chunk (MSE chunk data) ──
+    if first_line.starts_with("POST") && first_line.contains("/capture-chunk") {
+        let capture_id = first_line
+            .split("/capture-chunk?id=")
+            .nth(1)
+            .and_then(|s| s.split(' ').next())
+            .unwrap_or("")
+            .to_string();
+
+        if !capture_id.is_empty() && !body_bytes.is_empty() {
+            let state = app.state::<BrowserState>();
+            let mut captures = state.captures.lock().unwrap();
+            if let Some(cap) = captures.get_mut(&capture_id) {
+                let _ = cap.file.write_all(&body_bytes);
+                cap.total_bytes += body_bytes.len() as u64;
+            }
+        }
+        send_ok(&mut stream);
+        return;
+    }
+
+    // ── Route: POST /capture-end (MSE stream finished) ──
+    if first_line.starts_with("POST") && first_line.contains("/capture-end") {
+        if let Ok(info) = serde_json::from_slice::<CaptureEndInfo>(&body_bytes) {
+            let state = app.state::<BrowserState>();
+            let mut captures = state.captures.lock().unwrap();
+            if let Some(cap) = captures.remove(&info.id) {
+                drop(cap.file);
+
+                let video = DetectedVideo {
+                    url: format!("capture://{}", info.id),
+                    video_type: "capture".to_string(),
+                    label: if cap.mime_type.contains("webm") { "WEBM".to_string() } else { "MP4".to_string() },
+                    page_url: cap.page_url,
+                    page_title: cap.page_title.clone(),
+                    file_path: Some(cap.path.clone()),
+                    file_size: Some(cap.total_bytes),
+                    cookies: None,
+                };
+
+                let mut detected = state.detected.lock().unwrap();
+                detected.push(video.clone());
+                let _ = app.emit("browser-video-detected", &video);
+                let _ = app.emit("browser-capture-complete", &video);
             }
         }
         send_ok(&mut stream);
@@ -317,10 +361,6 @@ fn find_header_end(data: &[u8]) -> Option<usize> {
         }
     }
     None
-}
-
-fn extract_body(request: &str) -> Option<String> {
-    request.split("\r\n\r\n").nth(1).map(|s| s.to_string())
 }
 
 fn parse_qs(qs: &str) -> HashMap<String, String> {
@@ -595,9 +635,13 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
   const SKIP_EXT = /\.(php|html?|aspx?|jsp|json|js|css|png|jpe?g|gif|svg|woff2?|ico|ttf|eot|xml|m4s|m4f|cmfv|cmfa)(\?|#|$)/i;
   const SKIP_PATH = /\/(embed|watch|view_video|player|login|signup|register|checkout)\b/i;
   const TINY_PATH = /[_\-](120|160|180|240|320)p?[_\-.]|[_\-]small|[_\-]thumb|[_\-]preview|_low\b/i;
+  const VID = /\.(mp4|webm|mkv|avi|mov|flv|wmv|m4v|m3u8|mpd|ts)([\/\?#]|$)/i;
 
   function isJunk(url) {{
-    return AD_PAT.test(url) || THUMB_PAT.test(url) || SKIP_EXT.test(url) || SKIP_PATH.test(url) || TINY_PATH.test(url);
+    if (AD_PAT.test(url) || THUMB_PAT.test(url) || SKIP_EXT.test(url) || TINY_PATH.test(url)) return true;
+    // Only apply SKIP_PATH to non-video URLs — CDNs serve real files from /embed/, /player/ paths
+    if (SKIP_PATH.test(url) && !VID.test(url)) return true;
+    return false;
   }}
 
   // ── Helper: report a detected video URL ──
@@ -618,8 +662,6 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
       new Image().src = BASE + '/report?data=' + encodeURIComponent(data);
     }} catch(e) {{}}
   }}
-
-  const VID = /\.(mp4|webm|mkv|avi|mov|flv|wmv|m4v|m3u8|mpd|ts)([\/\?#]|$)/i;
 
   function classify(url) {{
     if (/\.m3u8/i.test(url)) return ['hls', 'HLS'];

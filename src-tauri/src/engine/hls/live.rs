@@ -82,14 +82,30 @@ pub async fn record_live(
 
     let is_fmp4 = init_segment.is_some();
     let ext = if is_fmp4 { "mp4" } else { "ts" };
-    let out_path = format!("{}/{}.{}", output_dir, filename, ext);
+    let temp_path = format!("{}/{}_temp.{}", output_dir, filename, ext);
+    let final_path = format!("{}/{}.mp4", output_dir, filename);
 
     {
         use std::io::Write;
-        let mut file = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
+        let mut file = std::fs::File::create(&temp_path).map_err(|e| e.to_string())?;
         if let Some(ref init) = init_segment { file.write_all(init).map_err(|e| e.to_string())?; }
         for seg in &all_segments { file.write_all(seg).map_err(|e| e.to_string())?; }
     }
 
-    Ok(out_path)
+    // Remux with ffmpeg if available
+    if crate::ffmpeg::resolve_ffmpeg_path(app).is_ok() {
+        let cancelled_remux = Arc::new(AtomicBool::new(false));
+        match crate::ffmpeg::run_ffmpeg_sync(
+            app, job_id, &temp_path, &final_path,
+            &crate::ffmpeg::ConversionPreset::Remux, &cancelled_remux,
+        ) {
+            Ok(path) => { std::fs::remove_file(&temp_path).ok(); return Ok(path); }
+            Err(_) => {}
+        }
+    }
+
+    // Fallback: keep the raw file
+    let fallback = format!("{}/{}.{}", output_dir, filename, ext);
+    std::fs::rename(&temp_path, &fallback).ok();
+    Ok(fallback)
 }

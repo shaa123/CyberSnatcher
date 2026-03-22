@@ -205,6 +205,7 @@ pub async fn download_dash(
     let all_urls = Arc::new(all_urls);
     let next_idx = Arc::new(AtomicUsize::new(0));
     let done_count = Arc::new(AtomicUsize::new(0));
+    let failed_count = Arc::new(AtomicUsize::new(0));
     let results: Arc<TokioMutex<Vec<Option<Vec<u8>>>>> =
         Arc::new(TokioMutex::new(vec![None; total_segs]));
 
@@ -216,6 +217,7 @@ pub async fn download_dash(
         let all_urls = all_urls.clone();
         let next_idx = next_idx.clone();
         let done_count = done_count.clone();
+        let failed_count = failed_count.clone();
         let results = results.clone();
         let cancelled = cancelled.clone();
         let app = app.clone();
@@ -247,17 +249,21 @@ pub async fn download_dash(
                     let mut res = results.lock().await;
                     res[idx] = Some(d);
                     done_count.fetch_add(1, Ordering::SeqCst);
+                } else {
+                    failed_count.fetch_add(1, Ordering::SeqCst);
+                    log::warn!("DASH segment {} failed all retries", idx);
                 }
 
                 let done = done_count.load(Ordering::SeqCst);
-                let pct = 8.0 + (done as f64 / total as f64) * 78.0;
+                let failed = failed_count.load(Ordering::SeqCst);
+                let pct = 8.0 + ((done + failed) as f64 / total as f64) * 78.0;
                 let _ = app.emit("download-progress", DownloadProgress {
                     job_id: job_id.clone(),
                     percent: pct,
                     speed: String::new(),
                     eta: String::new(),
                     status: "downloading".to_string(),
-                    log_line: format!("DASH segment {}/{}", done, total),
+                    log_line: format!("DASH segment {}/{} ({} failed)", done, total, failed),
                     file_path: None,
                     file_size: None,
                 });
@@ -269,6 +275,19 @@ pub async fn download_dash(
 
     if cancelled.load(Ordering::Relaxed) {
         return Err("Cancelled".to_string());
+    }
+
+    // Abort if too many segments failed (>10% failure = corrupted output)
+    let failed = failed_count.load(Ordering::SeqCst);
+    if failed > 0 {
+        if failed * 10 > total_segs {
+            return Err(format!(
+                "DASH download failed: {}/{} segments could not be fetched",
+                failed, total_segs
+            ));
+        }
+        emit_progress(app, job_id, 87.0, "downloading",
+            &format!("Warning: {}/{} segments failed — output may have gaps", failed, total_segs));
     }
 
     emit_progress(app, job_id, 88.0, "converting", "Assembling tracks...");
