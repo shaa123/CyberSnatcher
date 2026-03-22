@@ -81,6 +81,12 @@ export const updateRecordingRegion = (x: number, y: number, w: number, h: number
 export const capturePreview = (x: number, y: number, w: number, h: number) =>
   invoke<string>("capture_preview", { x, y, w, h });
 
+export const openCropOverlay = (x: number, y: number, width: number, height: number) =>
+  invoke<void>("open_crop_overlay", { x, y, width, height });
+
+export const closeCropOverlay = () =>
+  invoke<void>("close_crop_overlay");
+
 // ── HLS stream commands ──────────────────────────────────────────────────────
 
 export interface HlsQuality {

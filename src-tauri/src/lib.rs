@@ -59,6 +59,9 @@ pub fn run() {
             commands::recording::stop_recording,
             commands::recording::update_recording_region,
             commands::recording::capture_preview,
+            // Overlay commands
+            commands::overlay::open_crop_overlay,
+            commands::overlay::close_crop_overlay,
             // Stream commands
             commands::stream::parse_hls,
             commands::stream::download_hls_stream,

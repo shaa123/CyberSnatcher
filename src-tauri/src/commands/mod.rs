@@ -3,6 +3,7 @@ pub mod browser;
 pub mod convert;
 pub mod download;
 pub mod native;
+pub mod overlay;
 pub mod recording;
 pub mod settings;
 pub mod stream;

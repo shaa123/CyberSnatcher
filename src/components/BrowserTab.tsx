@@ -22,8 +22,7 @@ import {
   removeDetectedVideo,
   startRecording,
   stopRecording,
-
-
+  openCropOverlay,
 } from "../lib/tauri";
 import type { DetectedVideo } from "../lib/types";
 import type { HlsQuality } from "../lib/tauri";
@@ -143,32 +142,40 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   }, [browserOpen, visible, updatePosition]);
 
   // ── Recording: capture the browser viewport area ──
-  const getViewportScreenCoords = useCallback(async () => {
+  // ── Open crop overlay window positioned over the browser viewport ──
+  const handleOpenCropOverlay = useCallback(async () => {
     const el = viewportRef.current;
-    if (!el) return { x: 0, y: 0, w: 400, h: 300 };
+    if (!el) return;
     const bounds = el.getBoundingClientRect();
     const win = getCurrentWindow();
     const scaleFactor = await win.scaleFactor();
     const winPos = await win.outerPosition();
-    return {
-      x: winPos.x + bounds.left * scaleFactor,
-      y: winPos.y + bounds.top * scaleFactor,
-      w: bounds.width * scaleFactor,
-      h: bounds.height * scaleFactor,
-    };
+    // Convert to physical screen coordinates for the overlay window
+    const x = (winPos.x / scaleFactor) + bounds.left;
+    const y = (winPos.y / scaleFactor) + bounds.top;
+    await openCropOverlay(x, y, bounds.width, bounds.height);
   }, []);
 
-  const handleStartRecording = useCallback(async () => {
-    setRecordingResult(null);
-    const coords = await getViewportScreenCoords();
-    setRecording(true);
-    try {
-      await startRecording(coords.x, coords.y, coords.w, coords.h);
-    } catch (e) {
-      console.error("Failed to start recording:", e);
-      setRecording(false);
-    }
-  }, [getViewportScreenCoords]);
+  // ── Listen for overlay events ──
+  useEffect(() => {
+    const unsubs: Promise<() => void>[] = [];
+
+    unsubs.push(
+      listen<{ x: number; y: number; w: number; h: number }>("overlay-start-recording", async (e) => {
+        const { x, y, w, h } = e.payload;
+        setRecordingResult(null);
+        setRecording(true);
+        try {
+          await startRecording(x, y, w, h);
+        } catch (err) {
+          console.error("Failed to start recording:", err);
+          setRecording(false);
+        }
+      })
+    );
+
+    return () => { unsubs.forEach((p) => p.then((fn) => fn())); };
+  }, []);
 
   const handleStopRecording = useCallback(async () => {
     setRecording(false);
@@ -359,7 +366,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap",
         }}>GO</button>
 
-        <button onClick={recording ? handleStopRecording : handleStartRecording} style={{
+        <button onClick={recording ? handleStopRecording : handleOpenCropOverlay} style={{
           background: recording ? "linear-gradient(135deg, #ff444433, #cc000022)" : "linear-gradient(135deg, #ff222211, #88000011)",
           border: `1px solid ${recording ? "#ff4444" : "#ff444466"}`, borderRadius: "3px",
           color: recording ? "#ff6666" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
