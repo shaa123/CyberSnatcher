@@ -16,14 +16,22 @@ pub async fn download_url(
     filename: &str,
     cancelled: &std::sync::atomic::AtomicBool,
 ) -> Result<String, String> {
+    // Extract the lowercase extension from the URL path (ignores query string and fragment).
+    let url_ext: String = url.split('?').next().unwrap_or("")
+        .split('#').next().unwrap_or("")
+        .rsplit('.')
+        .next()
+        .map(|e| format!(".{}", e.to_lowercase()))
+        .unwrap_or_default();
+
     // 1. HLS streams
-    if url.contains(".m3u8") {
+    if url_ext == ".m3u8" {
         log::info!("Routing to HLS engine: {}", url);
         return hls::download_hls(app, job_id, url, page_url, cookies, output_dir, filename, cancelled).await;
     }
 
     // 2. DASH streams — fall through to yt-dlp for now
-    if url.contains(".mpd") {
+    if url_ext == ".mpd" {
         log::info!("DASH URL detected, routing to yt-dlp: {}", url);
         return Err("USE_YTDLP".into());
     }
@@ -31,10 +39,10 @@ pub async fn download_url(
     // 3. Direct video files
     let video_exts = [".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".m4v", ".ts"];
     for ext in &video_exts {
-        if url.to_lowercase().contains(ext) {
+        if &url_ext == ext {
             log::info!("Routing to direct downloader: {}", url);
             let output_path = format!("{}/{}{}", output_dir, filename, ext);
-            return direct::download_direct(app, job_id, url, page_url, &output_path, cancelled).await;
+            return direct::download_direct(app, job_id, url, page_url, cookies, &output_path, cancelled).await;
         }
     }
 

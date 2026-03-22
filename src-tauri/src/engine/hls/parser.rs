@@ -142,17 +142,22 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
     }
 
     let full_text = lines.join("\n");
+    // Per HLS spec (RFC 8216 §4.3.3.4): absence of #EXT-X-ENDLIST is the
+    // authoritative signal that a playlist is live.  Duration/segment-count
+    // heuristics cause false positives (short VODs) and false negatives
+    // (long-running live streams), so they are intentionally omitted.
     let is_live = !full_text.contains("#EXT-X-ENDLIST")
-        && !full_text.contains("#EXT-X-PLAYLIST-TYPE:VOD")
-        && total_duration < 120.0
-        && segments.len() < 30;
+        && !full_text.contains("#EXT-X-PLAYLIST-TYPE:VOD");
 
     Ok(HlsMediaPlaylist { segments, encryption, init_map_url, total_duration, is_live, media_sequence })
 }
 
 fn parse_attr(tag: &str, name: &str) -> Option<String> {
     let search = format!("{}=", name);
-    let start = tag.find(&search)? + search.len();
+    // Require the match to be at the start of the attribute list or immediately
+    // after a comma, so that "IV=" does not substring-match inside "KEYFORMATVERSIONS=".
+    let pos = tag.find(&search).filter(|&p| p == 0 || tag.as_bytes()[p - 1] == b',')?;
+    let start = pos + search.len();
     let rest = &tag[start..];
     if rest.starts_with('"') {
         let end = rest[1..].find('"')? + 1;

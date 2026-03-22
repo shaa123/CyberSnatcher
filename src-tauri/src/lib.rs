@@ -52,8 +52,6 @@ pub fn run() {
             commands::browser::hide_browser,
             commands::browser::get_browser_cookies,
             commands::browser::remove_detected_video,
-            commands::browser::get_browser_settings,
-            commands::browser::set_browser_settings,
             // Stream commands
             commands::stream::parse_hls,
             commands::stream::download_hls_stream,

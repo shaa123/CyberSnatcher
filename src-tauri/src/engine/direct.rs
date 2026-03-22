@@ -8,10 +8,14 @@ pub async fn download_direct(
     job_id: &str,
     url: &str,
     page_url: Option<&str>,
+    cookies: Option<&str>,
     output_path: &str,
     cancelled: &AtomicBool,
 ) -> Result<String, String> {
-    let client = super::http::VideoClient::new();
+    let mut client = super::http::VideoClient::new();
+    if let Some(page) = page_url { client = client.with_referer(page); }
+    else { client = client.with_referer(url); }
+    if let Some(c) = cookies { client = client.with_cookies(c); }
     let total_size = client.head_content_length(url).await;
 
     // Resume support
@@ -22,12 +26,18 @@ pub async fn download_direct(
     }
 
     let mut req = client.get_streaming(url);
-    if let Some(page) = page_url { req = req.header("Referer", page); }
     if start_byte > 0 { req = req.header("Range", format!("bytes={}-", start_byte)); }
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() && resp.status().as_u16() != 206 {
+    let status = resp.status().as_u16();
+    if status != 200 && status != 206 {
         return Err(format!("HTTP {}", resp.status()));
+    }
+
+    // If we requested a range but got 200 (server ignored Range header),
+    // the response is the full file — reset and overwrite instead of appending.
+    if start_byte > 0 && status == 200 {
+        start_byte = 0;
     }
 
     let mut file = if start_byte > 0 {
