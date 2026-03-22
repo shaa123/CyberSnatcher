@@ -19,6 +19,10 @@ pub struct BrowserState {
     pub captures: Mutex<HashMap<String, CaptureState>>,
     /// Download folder for saving captured videos
     pub download_folder: Mutex<String>,
+    /// Whether ad blocking is enabled in the browser
+    pub adblock_enabled: Mutex<bool>,
+    /// Whether popup blocking is enabled in the browser
+    pub popup_blocker_enabled: Mutex<bool>,
 }
 
 pub struct CaptureState {
@@ -41,6 +45,8 @@ impl BrowserState {
             detected: Mutex::new(vec![]),
             captures: Mutex::new(HashMap::new()),
             download_folder: Mutex::new(dl_folder),
+            adblock_enabled: Mutex::new(true),
+            popup_blocker_enabled: Mutex::new(true),
         }
     }
 }
@@ -463,7 +469,7 @@ fn get_content_length(url: &str) -> Option<u64> {
 // Also hooks MSE SourceBuffer + URL.createObjectURL for blob/MSE capture.
 // Streams MSE chunks directly to Rust via POST to localhost TCP server.
 
-fn make_inject_script(port: u16) -> String {
+fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: bool) -> String {
     format!(
         r#"
 (function() {{
@@ -471,6 +477,114 @@ fn make_inject_script(port: u16) -> String {
   if (window.__cs_injected) return;
   window.__cs_injected = true;
 
+  // ── Adblock + Popup Blocker settings (controlled from Settings UI) ──
+  window.__cs_adblock_enabled = {adblock_enabled};
+  window.__cs_popup_blocker_enabled = {popup_blocker_enabled};
+
+  // ── AD BLOCKER ──────────────────────────────────────────────────────────
+  const AD_DOMAINS = [
+    'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+    'google-analytics.com', 'googletagmanager.com', 'googletagservices.com',
+    'adservice.google.com', 'pagead2.googlesyndication.com',
+    'facebook.com/tr', 'connect.facebook.net/en_US/fbevents',
+    'amazon-adsystem.com', 'ads-api.twitter.com',
+    'ads.yahoo.com', 'analytics.yahoo.com',
+    'moatads.com', 'scorecardresearch.com',
+    'outbrain.com', 'taboola.com', 'mgid.com', 'revcontent.com',
+    'adnxs.com', 'adsrvr.org', 'bidswitch.net', 'casalemedia.com',
+    'criteo.com', 'criteo.net', 'demdex.net', 'exelator.com',
+    'eyeota.net', 'krxd.net', 'lijit.com', 'mathtag.com',
+    'openx.net', 'pubmatic.com', 'rubiconproject.com',
+    'sharethis.com', 'sharethrough.com', 'smartadserver.com',
+    'spotxchange.com', 'teads.tv', 'yieldmo.com',
+    'imasdk.googleapis.com', 'tpc.googlesyndication.com',
+    'ad.doubleclick.net', 'static.doubleclick.net',
+    'mediavisor.doubleclick.net',
+    'quantserve.com', 'serving-sys.com', 'adtechus.com',
+    'advertising.com', 'atdmt.com', 'adform.net',
+    'zedo.com', 'mixpanel.com', 'hotjar.com',
+    'fullstory.com', 'mouseflow.com',
+  ];
+
+  const AD_CSS_SELECTORS = [
+    '[id*="google_ads"]', '[id*="ad-container"]', '[id*="ad_container"]',
+    '[id*="adunit"]', '[id*="ad-unit"]', '[id*="adslot"]',
+    '[class*="ad-container"]', '[class*="ad_container"]',
+    '[class*="ad-wrapper"]', '[class*="ad_wrapper"]',
+    '[class*="adsbygoogle"]', '[class*="ad-banner"]',
+    '[class*="sponsored-content"]', '[class*="sponsored_content"]',
+    'ins.adsbygoogle', 'iframe[src*="doubleclick"]',
+    'iframe[src*="googlesyndication"]', 'iframe[src*="googleads"]',
+    '[data-ad]', '[data-ad-slot]', '[data-ad-client]',
+    '[data-google-query-id]', '[data-ad-manager-id]',
+    '.ad-slot', '.ad-placement', '.ad-zone',
+  ];
+
+  let adblockStyleEl = null;
+
+  function isAdDomain(url) {{
+    try {{
+      const hostname = new URL(url, location.href).hostname;
+      return AD_DOMAINS.some(d => hostname.includes(d) || hostname.endsWith('.' + d));
+    }} catch(e) {{
+      return AD_DOMAINS.some(d => url.includes(d));
+    }}
+  }}
+
+  function injectAdblockCSS() {{
+    if (adblockStyleEl) return;
+    adblockStyleEl = document.createElement('style');
+    adblockStyleEl.id = '__cs_adblock_css';
+    adblockStyleEl.textContent = AD_CSS_SELECTORS.join(',\n') + ' {{ display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; overflow: hidden !important; }}';
+    (document.head || document.documentElement).appendChild(adblockStyleEl);
+  }}
+
+  function removeAdblockCSS() {{
+    if (adblockStyleEl) {{
+      adblockStyleEl.remove();
+      adblockStyleEl = null;
+    }}
+  }}
+
+  // Expose enable/disable functions for live toggling from Rust
+  window.__cs_enableAdblock = function() {{
+    window.__cs_adblock_enabled = true;
+    injectAdblockCSS();
+  }};
+  window.__cs_disableAdblock = function() {{
+    window.__cs_adblock_enabled = false;
+    removeAdblockCSS();
+  }};
+
+  // Inject CSS immediately if enabled
+  if (window.__cs_adblock_enabled) {{
+    if (document.head || document.documentElement) {{
+      injectAdblockCSS();
+    }} else {{
+      document.addEventListener('DOMContentLoaded', () => {{
+        if (window.__cs_adblock_enabled) injectAdblockCSS();
+      }});
+    }}
+  }}
+
+  // ── POPUP BLOCKER ───────────────────────────────────────────────────────
+  const _origWindowOpen = window.open;
+  window.open = function(...args) {{
+    if (window.__cs_popup_blocker_enabled) {{
+      console.log('[CyberSnatcher] Popup blocked:', args[0]);
+      return null;
+    }}
+    return _origWindowOpen.apply(this, args);
+  }};
+
+  window.__cs_enablePopupBlocker = function() {{
+    window.__cs_popup_blocker_enabled = true;
+  }};
+  window.__cs_disablePopupBlocker = function() {{
+    window.__cs_popup_blocker_enabled = false;
+  }};
+
+  // ── VIDEO DETECTION (existing logic) ────────────────────────────────────
   const PORT = {port};
   const BASE = 'http://127.0.0.1:' + PORT;
   const reported = new Set();
@@ -535,9 +649,16 @@ fn make_inject_script(port: u16) -> String {
     if (og && ok(og.content)) {{ const [t,l] = classify(og.content); report(og.content, t, l); }}
   }}
 
-  // ── 2. Hook fetch ──
+  // ── 2. Hook fetch (video detection + adblock) ──
   const _fetch = window.fetch;
   window.fetch = async function(...args) {{
+    try {{
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+      // Adblock: block requests to ad domains
+      if (window.__cs_adblock_enabled && isAdDomain(url)) {{
+        return new Response('', {{ status: 204, statusText: 'Blocked by CyberSnatcher' }});
+      }}
+    }} catch(e) {{}}
     const res = await _fetch.apply(this, args);
     try {{
       const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
@@ -550,15 +671,59 @@ fn make_inject_script(port: u16) -> String {
     return res;
   }};
 
-  // ── 3. Hook XHR ──
+  // ── 3. Hook XHR (video detection + adblock) ──
   const _open = XMLHttpRequest.prototype.open;
+  const _xhrSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
+    this.__cs_url = String(url);
     try {{
-      const u = String(url);
+      const u = this.__cs_url;
       if (ok(u) && !isJunk(u)) {{ const [t,l] = classify(u); report(u, t, l); }}
     }} catch(e) {{}}
     return _open.call(this, method, url, ...rest);
   }};
+  XMLHttpRequest.prototype.send = function(...args) {{
+    if (window.__cs_adblock_enabled && this.__cs_url && isAdDomain(this.__cs_url)) {{
+      // Block ad XHR by aborting
+      return;
+    }}
+    return _xhrSend.apply(this, args);
+  }};
+
+  // ── Adblock: Block ad script/iframe creation ──
+  if (window.__cs_adblock_enabled) {{
+    const _createElement = document.createElement.bind(document);
+    document.createElement = function(tag, options) {{
+      const el = _createElement(tag, options);
+      if (window.__cs_adblock_enabled && (tag === 'script' || tag === 'iframe')) {{
+        const origSetAttr = el.setAttribute.bind(el);
+        el.setAttribute = function(name, value) {{
+          if ((name === 'src' || name === 'href') && isAdDomain(String(value))) {{
+            console.log('[CyberSnatcher] Blocked ad element:', tag, value);
+            return;
+          }}
+          return origSetAttr(name, value);
+        }};
+        const srcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src') ||
+                         Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+        if (srcDesc && srcDesc.set) {{
+          const origSrcSet = srcDesc.set;
+          Object.defineProperty(el, 'src', {{
+            set: function(v) {{
+              if (window.__cs_adblock_enabled && isAdDomain(String(v))) {{
+                console.log('[CyberSnatcher] Blocked ad src:', v);
+                return;
+              }}
+              origSrcSet.call(this, v);
+            }},
+            get: srcDesc.get ? srcDesc.get.bind(el) : undefined,
+            configurable: true,
+          }});
+        }}
+      }}
+      return el;
+    }};
+  }}
 
   // ── 4. MutationObserver ──
   function startObserver() {{
@@ -577,7 +742,9 @@ fn make_inject_script(port: u16) -> String {
 
 }})();
 "#,
-        port = port
+        port = port,
+        adblock_enabled = if adblock_enabled { "true" } else { "false" },
+        popup_blocker_enabled = if popup_blocker_enabled { "true" } else { "false" }
     )
 }
 
@@ -604,7 +771,14 @@ pub async fn open_browser_view(
     }
 
     let port = ensure_server(&app);
-    let inject_script = make_inject_script(port);
+    let (adblock_on, popup_on) = {
+        let state = app.state::<BrowserState>();
+        (
+            *state.adblock_enabled.lock().unwrap(),
+            *state.popup_blocker_enabled.lock().unwrap(),
+        )
+    };
+    let inject_script = make_inject_script(port, adblock_on, popup_on);
 
     let app_nav = app.clone();
     let app_load = app.clone();
@@ -782,4 +956,58 @@ pub async fn remove_detected_video(app: AppHandle, url: String) -> Result<(), St
     let mut detected = state.detected.lock().unwrap();
     detected.retain(|v| v.url != url);
     Ok(())
+}
+
+/// Get browser settings (adblock + popup blocker state)
+#[tauri::command]
+pub async fn get_browser_settings(app: AppHandle) -> Result<BrowserSettings, String> {
+    let state = app.state::<BrowserState>();
+    Ok(BrowserSettings {
+        adblock_enabled: *state.adblock_enabled.lock().unwrap(),
+        popup_blocker_enabled: *state.popup_blocker_enabled.lock().unwrap(),
+    })
+}
+
+/// Update browser settings and re-inject scripts into current webview
+#[tauri::command]
+pub async fn set_browser_settings(
+    app: AppHandle,
+    adblock_enabled: bool,
+    popup_blocker_enabled: bool,
+) -> Result<(), String> {
+    let state = app.state::<BrowserState>();
+    *state.adblock_enabled.lock().unwrap() = adblock_enabled;
+    *state.popup_blocker_enabled.lock().unwrap() = popup_blocker_enabled;
+
+    // If the browser webview is open, inject/remove the scripts live
+    if let Some(wv) = app.get_webview("browser-view") {
+        let js = format!(
+            "window.__cs_adblock_enabled = {}; window.__cs_popup_blocker_enabled = {};",
+            adblock_enabled, popup_blocker_enabled
+        );
+        wv.eval(&js).map_err(|e| e.to_string())?;
+
+        if adblock_enabled {
+            wv.eval("if (typeof window.__cs_enableAdblock === 'function') window.__cs_enableAdblock();")
+                .map_err(|e| e.to_string())?;
+        } else {
+            wv.eval("if (typeof window.__cs_disableAdblock === 'function') window.__cs_disableAdblock();")
+                .map_err(|e| e.to_string())?;
+        }
+        if popup_blocker_enabled {
+            wv.eval("if (typeof window.__cs_enablePopupBlocker === 'function') window.__cs_enablePopupBlocker();")
+                .map_err(|e| e.to_string())?;
+        } else {
+            wv.eval("if (typeof window.__cs_disablePopupBlocker === 'function') window.__cs_disablePopupBlocker();")
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserSettings {
+    pub adblock_enabled: bool,
+    pub popup_blocker_enabled: bool,
 }
