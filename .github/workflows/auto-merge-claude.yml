@@ -7,54 +7,36 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
+          token: ${{ github.token }}
 
-      - name: Create and merge PR
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Merge claude branch into main and push
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
           echo "Branch: $BRANCH"
 
-          # Check if branch has any commits ahead of main
-          git fetch origin main
-          AHEAD=$(git rev-list --count origin/main..HEAD)
-          echo "Commits ahead of main: $AHEAD"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin "$BRANCH"
+
+          # Check if there's anything to merge
+          AHEAD=$(git rev-list --count HEAD..origin/"$BRANCH")
+          echo "Claude branch is $AHEAD commits ahead of main"
           if [ "$AHEAD" -eq 0 ]; then
-            echo "Branch is up to date with main, nothing to merge."
+            echo "Nothing to merge."
             exit 0
           fi
 
-          # Close any existing open PRs for this branch first
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -n "$EXISTING_PR" ]; then
-            echo "Closing existing PR #$EXISTING_PR"
-            gh pr close "$EXISTING_PR" 2>/dev/null || true
-          fi
-
-          # Create a fresh PR
-          PR_URL=$(gh pr create \
-            --title "Auto-merge: $BRANCH" \
-            --body "Automated PR to merge Claude branch \`$BRANCH\` into \`main\`." \
-            --base main \
-            --head "$BRANCH")
-          echo "Created PR: $PR_URL"
-          PR_NUMBER=$(echo "$PR_URL" | grep -oP '\d+$')
-
-          # Merge immediately
-          gh pr merge "$PR_NUMBER" --merge --delete-branch || {
-            echo "Merge failed, trying without branch deletion..."
-            gh pr merge "$PR_NUMBER" --merge || {
-              echo "Merge still failed, attempting admin merge..."
-              gh pr merge "$PR_NUMBER" --merge --admin || echo "All merge attempts failed"
-            }
-          }
+          # Merge and push directly
+          git merge origin/"$BRANCH" --no-edit -m "Merge $BRANCH into main"
+          git push origin main
