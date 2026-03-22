@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDownloadStore } from "../../stores/downloadStore";
 import { useDownloads } from "../../hooks/useDownloads";
+import { getBrowserSettings, setBrowserSettings } from "../../lib/tauri";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -11,10 +12,44 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
   const downloadFolder = useDownloadStore((s) => s.downloadFolder);
   const setDownloadFolder = useDownloadStore((s) => s.setDownloadFolder);
   const { items, selectedId } = useDownloads();
-  const [tab, setTab] = useState<"general" | "logs">("general");
+  const [tab, setTab] = useState<"general" | "browser" | "logs">("general");
   const [folderInput, setFolderInput] = useState(downloadFolder);
 
+  // Browser settings state
+  const [adblockEnabled, setAdblockEnabled] = useState(true);
+  const [popupBlockerEnabled, setPopupBlockerEnabled] = useState(true);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   const selectedItem = items.find((i) => i.id === selectedId);
+
+  // Load browser settings from backend on mount
+  useEffect(() => {
+    getBrowserSettings()
+      .then((settings) => {
+        setAdblockEnabled(settings.adblock_enabled);
+        setPopupBlockerEnabled(settings.popup_blocker_enabled);
+        setSettingsLoaded(true);
+      })
+      .catch(() => setSettingsLoaded(true));
+  }, []);
+
+  const handleToggleAdblock = async (enabled: boolean) => {
+    setAdblockEnabled(enabled);
+    try {
+      await setBrowserSettings(enabled, popupBlockerEnabled);
+    } catch (e) {
+      console.error("Failed to update adblock setting:", e);
+    }
+  };
+
+  const handleTogglePopupBlocker = async (enabled: boolean) => {
+    setPopupBlockerEnabled(enabled);
+    try {
+      await setBrowserSettings(adblockEnabled, enabled);
+    } catch (e) {
+      console.error("Failed to update popup blocker setting:", e);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -32,22 +67,17 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
 
         {/* Tabs */}
         <div className="flex border-b border-cyber-border shrink-0">
-          <button
-            onClick={() => setTab("general")}
-            className={`flex-1 py-2 text-xs font-semibold transition-colors ${
-              tab === "general" ? "text-cyber-primary border-b-2 border-cyber-primary" : "text-cyber-text-tertiary hover:text-cyber-text-secondary"
-            }`}
-          >
-            General
-          </button>
-          <button
-            onClick={() => setTab("logs")}
-            className={`flex-1 py-2 text-xs font-semibold transition-colors ${
-              tab === "logs" ? "text-cyber-primary border-b-2 border-cyber-primary" : "text-cyber-text-tertiary hover:text-cyber-text-secondary"
-            }`}
-          >
-            Output Log
-          </button>
+          {(["general", "browser", "logs"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+                tab === t ? "text-cyber-primary border-b-2 border-cyber-primary" : "text-cyber-text-tertiary hover:text-cyber-text-secondary"
+              }`}
+            >
+              {t === "general" ? "General" : t === "browser" ? "Browser" : "Output Log"}
+            </button>
+          ))}
         </div>
 
         {/* Content */}
@@ -90,8 +120,111 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
               <div className="p-3 rounded-lg bg-cyber-bg border border-cyber-border space-y-1">
                 <p className="text-xs text-cyber-text-secondary font-semibold">How it works</p>
                 <p className="text-[10px] text-cyber-text-tertiary leading-relaxed">
-                  CyberSnatcher uses yt-dlp under the hood to download videos. Make sure yt-dlp is installed and in your PATH. 
+                  CyberSnatcher uses yt-dlp under the hood to download videos. Make sure yt-dlp is installed and in your PATH.
                   Paste any URL from YouTube, Twitter/X, TikTok, Instagram, Reddit, or direct video links.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {tab === "browser" && (
+            <div className="space-y-4">
+              {/* Adblock toggle */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-cyber-bg border border-cyber-border">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e040fb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                    <span className="text-xs font-semibold text-cyber-text-primary">Ad Blocker</span>
+                  </div>
+                  <p className="text-[10px] text-cyber-text-tertiary mt-1 ml-6">
+                    Blocks ads, trackers, and analytics scripts in the built-in browser
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleToggleAdblock(!adblockEnabled)}
+                  disabled={!settingsLoaded}
+                  style={{
+                    width: "44px",
+                    height: "24px",
+                    borderRadius: "12px",
+                    border: "none",
+                    cursor: settingsLoaded ? "pointer" : "default",
+                    background: adblockEnabled ? "#b400ff" : "#2a1e3a",
+                    position: "relative",
+                    transition: "background 0.2s",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "18px",
+                      height: "18px",
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: "3px",
+                      left: adblockEnabled ? "23px" : "3px",
+                      transition: "left 0.2s",
+                    }}
+                  />
+                </button>
+              </div>
+
+              {/* Popup blocker toggle */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-cyber-bg border border-cyber-border">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00f5ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="9" y1="9" x2="15" y2="15"/>
+                      <line x1="15" y1="9" x2="9" y2="15"/>
+                    </svg>
+                    <span className="text-xs font-semibold text-cyber-text-primary">Popup Blocker</span>
+                  </div>
+                  <p className="text-[10px] text-cyber-text-tertiary mt-1 ml-6">
+                    Prevents websites from opening unwanted popup windows
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleTogglePopupBlocker(!popupBlockerEnabled)}
+                  disabled={!settingsLoaded}
+                  style={{
+                    width: "44px",
+                    height: "24px",
+                    borderRadius: "12px",
+                    border: "none",
+                    cursor: settingsLoaded ? "pointer" : "default",
+                    background: popupBlockerEnabled ? "#b400ff" : "#2a1e3a",
+                    position: "relative",
+                    transition: "background 0.2s",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "18px",
+                      height: "18px",
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: "3px",
+                      left: popupBlockerEnabled ? "23px" : "3px",
+                      transition: "left 0.2s",
+                    }}
+                  />
+                </button>
+              </div>
+
+              {/* Info */}
+              <div className="p-3 rounded-lg bg-cyber-bg border border-cyber-border space-y-1">
+                <p className="text-xs text-cyber-text-secondary font-semibold">How it works</p>
+                <p className="text-[10px] text-cyber-text-tertiary leading-relaxed">
+                  The ad blocker injects content-blocking scripts into the built-in browser. It blocks known ad
+                  domains (DoubleClick, Google Ads, etc.), hides ad containers via CSS, and prevents ad-related
+                  network requests. The popup blocker prevents sites from opening new windows via window.open().
+                  Changes take effect immediately on the current page and all future pages.
                 </p>
               </div>
             </div>
@@ -108,7 +241,7 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
                     {selectedItem.logs.length === 0 ? (
                       <span className="text-cyber-text-tertiary">No log output yet.</span>
                     ) : (
-                      selectedItem.logs.map((line, i) => (
+                      selectedItem.logs.map((line: string, i: number) => (
                         <div key={i} className={
                           line.includes("[download]") ? "log-success" :
                           line.includes("[info]") ? "log-info" :
@@ -118,7 +251,7 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
                       ))
                     )}
                     {selectedItem.status === "downloading" && (
-                      <div className="text-cyber-text-tertiary mt-1"><span className="animate-pulse">▊</span></div>
+                      <div className="text-cyber-text-tertiary mt-1"><span className="animate-pulse">&#9610;</span></div>
                     )}
                   </div>
                 </>

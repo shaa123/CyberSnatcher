@@ -3,6 +3,7 @@ import { downloadDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar";
 import BrowserTab from "./components/BrowserTab";
+import SettingsModal from "./components/Settings/SettingsModal";
 import { analyzeUrl, startDownload, cancelDownload, checkYtdlp, checkFfmpeg, showInFolder, openFile, convertFile, nativeDownload, updateYtdlp, hideBrowser, showBrowser } from "./lib/tauri";
 import type { DownloadProgress, DownloadItem, ConversionPreset } from "./lib/types";
 
@@ -35,6 +36,7 @@ function formatToQuality(f: string, qualityIdx: number): string {
 export default function App() {
   // ── Tab state ──
   const [activeTab, setActiveTab] = useState<"download" | "browser">("download");
+  const [showSettings, setShowSettings] = useState(false);
 
   // ── All existing state (unchanged) ──
   const [url, setUrl] = useState("");
@@ -370,11 +372,32 @@ export default function App() {
         {activeTab === "browser" && (
           <span style={{
             fontSize: "9px", color: "var(--text-dimmer)", letterSpacing: "1px",
-            marginRight: "12px",
+            marginRight: "8px",
           }}>
             Videos auto-detected while browsing
           </span>
         )}
+        <button
+          onClick={() => setShowSettings(true)}
+          title="Settings"
+          style={{
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            padding: "8px 12px",
+            color: "var(--text-dim)",
+            transition: "color 0.2s",
+            display: "flex",
+            alignItems: "center",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#e040fb")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-dim)")}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
       </div>
 
       {/* ── BROWSER TAB ── */}
@@ -714,6 +737,14 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          ytdlpInstalled={ytdlpOk}
+        />
       )}
     </div>
   );
