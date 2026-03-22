@@ -329,7 +329,7 @@ pub async fn download_dash(
 
     let ffmpeg_bin = crate::ffmpeg::resolve_ffmpeg_path(app)?;
 
-    let mux_result = if audio_track.is_some() && audio_path.exists() {
+    let mux_output = if audio_track.is_some() && audio_path.exists() {
         // Mux video + audio
         tokio::process::Command::new(&ffmpeg_bin)
             .args([
@@ -340,9 +340,9 @@ pub async fn download_dash(
                 "-y",
                 &mp4_path.to_string_lossy(),
             ])
-            .stdout(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
-            .status()
+            .output()
             .await
             .map_err(|e| format!("ffmpeg error: {}", e))?
     } else {
@@ -355,9 +355,9 @@ pub async fn download_dash(
                 "-y",
                 &mp4_path.to_string_lossy(),
             ])
-            .stdout(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
-            .status()
+            .output()
             .await
             .map_err(|e| format!("ffmpeg error: {}", e))?
     };
@@ -366,8 +366,10 @@ pub async fn download_dash(
     let _ = std::fs::remove_file(&video_path);
     let _ = std::fs::remove_file(&audio_path);
 
-    if !mux_result.success() {
-        return Err(format!("ffmpeg mux failed: {}", mux_result));
+    if !mux_output.status.success() {
+        let stderr = String::from_utf8_lossy(&mux_output.stderr);
+        let last_lines: String = stderr.lines().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+        return Err(format!("ffmpeg mux failed: {}. {}", mux_output.status, last_lines));
     }
 
     // Patch duration

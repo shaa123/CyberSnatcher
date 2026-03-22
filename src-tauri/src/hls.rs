@@ -583,7 +583,7 @@ fn parse_iv_hex(s: &str) -> Option<[u8; 16]> {
 async fn remux_to_mp4(app: &AppHandle, input: &PathBuf, output: &PathBuf) -> Result<(), String> {
     let ffmpeg_bin = crate::ffmpeg::resolve_ffmpeg_path(app)?;
 
-    let status = tokio::process::Command::new(&ffmpeg_bin)
+    let output_result = tokio::process::Command::new(&ffmpeg_bin)
         .args([
             "-i", &input.to_string_lossy(),
             "-c", "copy",
@@ -591,16 +591,18 @@ async fn remux_to_mp4(app: &AppHandle, input: &PathBuf, output: &PathBuf) -> Res
             "-y",
             &output.to_string_lossy(),
         ])
-        .stdout(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
-        .status()
+        .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
 
-    if status.success() {
+    if output_result.status.success() {
         Ok(())
     } else {
-        Err(format!("ffmpeg exited with code: {}", status))
+        let stderr = String::from_utf8_lossy(&output_result.stderr);
+        let last_lines: String = stderr.lines().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+        Err(format!("ffmpeg exited with code: {}. {}", output_result.status, last_lines))
     }
 }
 

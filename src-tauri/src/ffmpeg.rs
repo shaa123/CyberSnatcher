@@ -201,7 +201,7 @@ pub fn run_ffmpeg_sync(
     let mut child = Command::new(&bin)
         .args(&full_args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("Failed to start ffmpeg: {}", e))?;
 
