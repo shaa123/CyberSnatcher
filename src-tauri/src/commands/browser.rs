@@ -773,10 +773,9 @@ pub async fn open_browser_view(
     let port = ensure_server(&app);
     let (adblock_on, popup_on) = {
         let state = app.state::<BrowserState>();
-        (
-            *state.adblock_enabled.lock().unwrap(),
-            *state.popup_blocker_enabled.lock().unwrap(),
-        )
+        let adblock = *state.adblock_enabled.lock().unwrap();
+        let popup = *state.popup_blocker_enabled.lock().unwrap();
+        (adblock, popup)
     };
     let inject_script = make_inject_script(port, adblock_on, popup_on);
 
