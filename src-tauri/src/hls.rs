@@ -167,8 +167,9 @@ pub async fn download_hls(
         }
     }
 
-    // Step 4: fetch decryption key if encrypted
-    let mut crypto_key: Option<Vec<u8>> = None;
+    // Step 4: fetch decryption key(s) if encrypted (supports key rotation)
+    let key_cache: Arc<TokioMutex<std::collections::HashMap<String, Vec<u8>>>> =
+        Arc::new(TokioMutex::new(std::collections::HashMap::new()));
     let mut default_iv: Option<[u8; 16]> = None;
     if let Some(ref key_info) = playlist.encryption {
         emit_progress(app, job_id, 7.0, "downloading", "Fetching decryption key...");
@@ -177,7 +178,7 @@ pub async fn download_hls(
         if key_bytes.len() != 16 {
             return Err(format!("Key size {} != 16", key_bytes.len()));
         }
-        crypto_key = Some(key_bytes);
+        key_cache.lock().await.insert(key_info.uri.clone(), key_bytes);
         default_iv = key_info.iv;
         emit_progress(app, job_id, 8.0, "downloading", "Decryption key loaded");
     }
@@ -206,7 +207,7 @@ pub async fn download_hls(
         let failed_count = failed_count.clone();
         let results = results.clone();
         let cancelled = cancelled.clone();
-        let crypto_key = crypto_key.clone();
+        let key_cache = key_cache.clone();
         let default_iv = default_iv;
         let app = app.clone();
         let job_id = job_id.to_string();
@@ -224,18 +225,32 @@ pub async fn download_hls(
                 for attempt in 1..=MAX_RETRIES {
                     match fetch_bytes(&client, &seg.url).await {
                         Ok(mut bytes) => {
-                            // Decrypt if needed
-                            if let Some(ref key) = crypto_key {
-                                let iv = seg.key.as_ref()
-                                    .and_then(|k| k.iv)
+                            // Decrypt if needed (supports key rotation)
+                            if let Some(ref seg_key) = seg.key {
+                                let key_uri = &seg_key.uri;
+                                // Fetch key if not cached yet
+                                let key_bytes = {
+                                    let cache = key_cache.lock().await;
+                                    cache.get(key_uri).cloned()
+                                };
+                                let key = match key_bytes {
+                                    Some(k) => k,
+                                    None => {
+                                        match fetch_bytes(&client, key_uri).await {
+                                            Ok(k) if k.len() == 16 => {
+                                                key_cache.lock().await.insert(key_uri.clone(), k.clone());
+                                                k
+                                            }
+                                            _ => { data = None; break; }
+                                        }
+                                    }
+                                };
+                                let iv = seg_key.iv
                                     .or(default_iv)
                                     .unwrap_or_else(|| sequence_iv(seg.seq));
-                                match decrypt_aes128(&bytes, key, &iv) {
+                                match decrypt_aes128(&bytes, &key, &iv) {
                                     Ok(decrypted) => { bytes = decrypted; }
-                                    Err(e) => {
-                                        eprintln!("Decrypt error seg {}: {}", idx, e);
-                                        // use raw data as fallback
-                                    }
+                                    Err(_) => { data = None; break; }
                                 }
                             }
                             data = Some(bytes);
