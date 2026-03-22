@@ -317,6 +317,8 @@ fn make_inject_script(port: u16) -> String {
   // ── 1. DOM scanner ──
   function scanDOM() {{
     document.querySelectorAll('video').forEach(v => {{
+      // Skip videos shorter than 1 second
+      if (v.duration && isFinite(v.duration) && v.duration < 1) return;
       [v.src, v.currentSrc].forEach(s => {{
         if (ok(s)) {{ const [t,l] = classify(s); report(s, t, l); }}
       }});

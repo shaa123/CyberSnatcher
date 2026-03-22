@@ -628,27 +628,21 @@ function CropOverlay({ rect, onRectChange }: { rect: CropRect; onRectChange: (r:
 
   return (
     <div
-      style={{ position: "absolute", inset: 0, zIndex: 90, pointerEvents: "none" }}
+      style={{ position: "absolute", inset: 0, zIndex: 90 }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
-      {/* Dimmed mask around crop area */}
-      <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
-        <defs>
-          <mask id="crop-mask">
-            <rect width="100%" height="100%" fill="white" />
-            <rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="black" />
-          </mask>
-        </defs>
-        <rect width="100%" height="100%" fill="rgba(0,0,0,0.6)" mask="url(#crop-mask)" />
-      </svg>
+      {/* Dimmed regions around crop area (4 divs instead of SVG mask) */}
+      <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: Math.max(0, rect.y), background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: Math.max(0, rect.y), left: 0, width: Math.max(0, rect.x), height: rect.h, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: Math.max(0, rect.y), left: rect.x + rect.w, right: 0, height: rect.h, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: rect.y + rect.h, left: 0, width: "100%", bottom: 0, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
 
       {/* Crop border */}
       <div style={{
         position: "absolute", left: rect.x, top: rect.y, width: rect.w, height: rect.h,
         border: "2px solid #ff4444", borderRadius: "2px",
         boxShadow: "0 0 0 1px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3), 0 0 20px #ff444444",
-        pointerEvents: "auto",
       }}>
         {/* Move handle (center area) */}
         <div
