@@ -1,10 +1,9 @@
 export interface DetectedVideo {
   url: string;
-  video_type: "direct" | "hls" | "dash" | "capture";
+  video_type: "direct" | "hls" | "dash";
   label: string;
   page_url: string;
   page_title: string;
-  file_path?: string | null;
   file_size?: number | null;
   cookies?: string | null;
 }

@@ -68,17 +68,6 @@ export const getBrowserCookies = (url: string) =>
 export const removeDetectedVideo = (url: string) =>
   invoke<void>("remove_detected_video", { url });
 
-export interface BrowserSettings {
-  adblock_enabled: boolean;
-  popup_blocker_enabled: boolean;
-}
-
-export const getBrowserSettings = () =>
-  invoke<BrowserSettings>("get_browser_settings");
-
-export const setBrowserSettings = (adblockEnabled: boolean, popupBlockerEnabled: boolean) =>
-  invoke<void>("set_browser_settings", { adblockEnabled, popupBlockerEnabled });
-
 // ── HLS stream commands ──────────────────────────────────────────────────────
 
 export interface HlsQuality {

@@ -1,10 +1,8 @@
-// commands/browser.rs — Built-in browser with video detection + MSE/blob capture
+// commands/browser.rs — Built-in browser with video detection
 // Creates a child webview INSIDE the main window, injects video detection
-// hooks AND MSE streaming capture, writes chunks directly to disk.
+// hooks to find HLS/DASH/direct video URLs.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs::File;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::Mutex;
@@ -15,38 +13,13 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 pub struct BrowserState {
     pub server_port: Mutex<Option<u16>>,
     pub detected: Mutex<Vec<DetectedVideo>>,
-    /// Active MSE captures: capture_id -> temp file path
-    pub captures: Mutex<HashMap<String, CaptureState>>,
-    /// Download folder for saving captured videos
-    pub download_folder: Mutex<String>,
-    /// Whether ad blocking is enabled in the browser
-    pub adblock_enabled: Mutex<bool>,
-    /// Whether popup blocking is enabled in the browser
-    pub popup_blocker_enabled: Mutex<bool>,
-}
-
-pub struct CaptureState {
-    pub file: File,
-    pub path: String,
-    pub mime_type: String,
-    pub total_bytes: u64,
-    pub page_title: String,
-    pub page_url: String,
 }
 
 impl BrowserState {
     pub fn new() -> Self {
-        let dl_folder = dirs::download_dir()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
         Self {
             server_port: Mutex::new(None),
             detected: Mutex::new(vec![]),
-            captures: Mutex::new(HashMap::new()),
-            download_folder: Mutex::new(dl_folder),
-            adblock_enabled: Mutex::new(true),
-            popup_blocker_enabled: Mutex::new(true),
         }
     }
 }
@@ -58,10 +31,7 @@ pub struct DetectedVideo {
     pub label: String,
     pub page_url: String,
     pub page_title: String,
-    /// For MSE captures, this is the path to the saved file
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_path: Option<String>,
-    /// File size in bytes (for captures)
+    /// File size in bytes (from HEAD check)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_size: Option<u64>,
     /// Cookies from the browser session (for auth-gated streams)
@@ -69,7 +39,7 @@ pub struct DetectedVideo {
     pub cookies: Option<String>,
 }
 
-// ── Local detection + capture server ─────────────────────────────────────────
+// ── Local detection server ───────────────────────────────────────────────────
 
 fn ensure_server(app: &AppHandle) -> u16 {
     let state = app.state::<BrowserState>();
@@ -95,7 +65,7 @@ fn ensure_server(app: &AppHandle) -> u16 {
 }
 
 fn handle_request(mut stream: std::net::TcpStream, app: &AppHandle) {
-    // ── Phase 1: read headers until \r\n\r\n ─────────────────────────────────
+    // ── Read headers until \r\n\r\n ──────────────────────────────────────────
     let mut header_buf: Vec<u8> = Vec::with_capacity(8 * 1024);
     let mut tmp = [0u8; 4096];
     loop {
@@ -114,17 +84,6 @@ fn handle_request(mut stream: std::net::TcpStream, app: &AppHandle) {
 
     let header_str = String::from_utf8_lossy(&header_buf[..header_end]).to_string();
     let first_line = header_str.lines().next().unwrap_or("");
-
-    // Parse Content-Length from headers
-    let content_length: usize = header_str
-        .lines()
-        .find(|l| l.to_ascii_lowercase().starts_with("content-length:"))
-        .and_then(|l| l.splitn(2, ':').nth(1))
-        .and_then(|v| v.trim().parse().ok())
-        .unwrap_or(0);
-
-    // Bytes of body already read during header phase
-    let body_pre = header_buf.len() - header_end;
 
     // ── Route: GET /report?data=... (URL detection) ──────────────────────────
     if first_line.starts_with("GET") && first_line.contains("/report?data=") {
@@ -155,192 +114,8 @@ fn handle_request(mut stream: std::net::TcpStream, app: &AppHandle) {
         return;
     }
 
-    // ── Route: POST /blob-save — stream directly to disk (body can be 100MB+)
-    if first_line.starts_with("POST") && first_line.contains("/blob-save") {
-        let qs = first_line
-            .split("/blob-save?")
-            .nth(1)
-            .and_then(|s| s.split(' ').next())
-            .unwrap_or("");
-        let params = parse_qs(qs);
-        let mime = params.get("mime").cloned().unwrap_or_default();
-        let title = params.get("title").cloned().unwrap_or_else(|| "blob_video".to_string());
-        let page_url = params.get("url").cloned().unwrap_or_default();
-
-        if content_length > 1024 * 1024 {
-            let state = app.state::<BrowserState>();
-            let dl_folder = state.download_folder.lock().unwrap().clone();
-
-            let ext = if mime.contains("webm") { "webm" } else { "mp4" };
-            let safe_title = sanitize(&title);
-            let ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            let filename = format!("{}_{}.{}", safe_title, ts % 100000, ext);
-            let path = std::path::Path::new(&dl_folder).join(&filename);
-            let path_str = path.to_string_lossy().to_string();
-
-            if let Ok(mut file) = File::create(&path) {
-                // Write any body bytes already read during header phase
-                if body_pre > 0 {
-                    let _ = file.write_all(&header_buf[header_end..]);
-                }
-                // Stream remaining body to disk in 256KB chunks
-                let mut remaining = content_length.saturating_sub(body_pre);
-                let mut chunk = vec![0u8; 256 * 1024];
-                while remaining > 0 {
-                    let to_read = remaining.min(chunk.len());
-                    match stream.read(&mut chunk[..to_read]) {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => {
-                            let _ = file.write_all(&chunk[..n]);
-                            remaining = remaining.saturating_sub(n);
-                        }
-                    }
-                }
-                drop(file);
-
-                let saved_bytes = content_length as u64;
-                let video = DetectedVideo {
-                    url: format!("blob://{}", ts),
-                    video_type: "capture".to_string(),
-                    label: ext.to_uppercase(),
-                    page_url,
-                    page_title: title,
-                    file_path: Some(path_str),
-                    file_size: Some(saved_bytes),
-                    cookies: None,
-                };
-
-                let mut detected = state.detected.lock().unwrap();
-                detected.push(video.clone());
-                let _ = app.emit("browser-video-detected", &video);
-                let _ = app.emit("browser-capture-complete", &video);
-            }
-        }
-        send_ok(&mut stream);
-        return;
-    }
-
-    // ── Phase 2: read full body for remaining POST routes ────────────────────
-    let body_bytes: Vec<u8> = if content_length > 0 {
-        let mut body = Vec::with_capacity(content_length);
-        // Include bytes already read during header phase
-        if body_pre > 0 {
-            body.extend_from_slice(&header_buf[header_end..]);
-        }
-        let mut tmp2 = [0u8; 64 * 1024];
-        while body.len() < content_length {
-            let to_read = (content_length - body.len()).min(tmp2.len());
-            match stream.read(&mut tmp2[..to_read]) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => body.extend_from_slice(&tmp2[..n]),
-            }
-        }
-        body
-    } else {
-        Vec::new()
-    };
-
-    // ── Route: POST /capture-start (MSE stream started) ──
-    if first_line.starts_with("POST") && first_line.contains("/capture-start") {
-        if let Ok(info) = serde_json::from_slice::<CaptureStartInfo>(&body_bytes) {
-            let state = app.state::<BrowserState>();
-            let dl_folder = state.download_folder.lock().unwrap().clone();
-
-            let ext = if info.mime_type.contains("webm") { "webm" } else { "mp4" };
-            let safe_title = sanitize(&info.page_title);
-            let filename = format!("{}_{}.{}", safe_title, &info.id[..6.min(info.id.len())], ext);
-            let path = std::path::Path::new(&dl_folder).join(&filename);
-            let path_str = path.to_string_lossy().to_string();
-
-            match File::create(&path) {
-                Ok(file) => {
-                    let mut captures = state.captures.lock().unwrap();
-                    captures.insert(info.id.clone(), CaptureState {
-                        file,
-                        path: path_str,
-                        mime_type: info.mime_type,
-                        total_bytes: 0,
-                        page_title: info.page_title,
-                        page_url: info.page_url,
-                    });
-                }
-                Err(e) => {
-                    eprintln!("Failed to create capture file: {}", e);
-                }
-            }
-        }
-        send_ok(&mut stream);
-        return;
-    }
-
-    // ── Route: POST /capture-chunk (MSE chunk data) ──
-    if first_line.starts_with("POST") && first_line.contains("/capture-chunk") {
-        let capture_id = first_line
-            .split("/capture-chunk?id=")
-            .nth(1)
-            .and_then(|s| s.split(' ').next())
-            .unwrap_or("")
-            .to_string();
-
-        if !capture_id.is_empty() && !body_bytes.is_empty() {
-            let state = app.state::<BrowserState>();
-            let mut captures = state.captures.lock().unwrap();
-            if let Some(cap) = captures.get_mut(&capture_id) {
-                let _ = cap.file.write_all(&body_bytes);
-                cap.total_bytes += body_bytes.len() as u64;
-            }
-        }
-        send_ok(&mut stream);
-        return;
-    }
-
-    // ── Route: POST /capture-end (MSE stream finished) ──
-    if first_line.starts_with("POST") && first_line.contains("/capture-end") {
-        if let Ok(info) = serde_json::from_slice::<CaptureEndInfo>(&body_bytes) {
-            let state = app.state::<BrowserState>();
-            let mut captures = state.captures.lock().unwrap();
-            if let Some(cap) = captures.remove(&info.id) {
-                drop(cap.file);
-
-                let video = DetectedVideo {
-                    url: format!("capture://{}", info.id),
-                    video_type: "capture".to_string(),
-                    label: if cap.mime_type.contains("webm") { "WEBM".to_string() } else { "MP4".to_string() },
-                    page_url: cap.page_url,
-                    page_title: cap.page_title.clone(),
-                    file_path: Some(cap.path.clone()),
-                    file_size: Some(cap.total_bytes),
-                    cookies: None,
-                };
-
-                let mut detected = state.detected.lock().unwrap();
-                detected.push(video.clone());
-                let _ = app.emit("browser-video-detected", &video);
-                let _ = app.emit("browser-capture-complete", &video);
-            }
-        }
-        send_ok(&mut stream);
-        return;
-    }
-
     // Fallback
     send_ok(&mut stream);
-}
-
-#[derive(Deserialize)]
-struct CaptureStartInfo {
-    id: String,
-    mime_type: String,
-    page_title: String,
-    page_url: String,
-}
-
-#[derive(Deserialize)]
-struct CaptureEndInfo {
-    id: String,
 }
 
 fn send_ok(stream: &mut std::net::TcpStream) {
@@ -361,16 +136,6 @@ fn find_header_end(data: &[u8]) -> Option<usize> {
         }
     }
     None
-}
-
-fn parse_qs(qs: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for pair in qs.split('&') {
-        if let Some((k, v)) = pair.split_once('=') {
-            map.insert(k.to_string(), percent_decode(v));
-        }
-    }
-    map
 }
 
 fn percent_decode(s: &str) -> String {
@@ -396,20 +161,6 @@ fn percent_decode(s: &str) -> String {
         i += 1;
     }
     String::from_utf8_lossy(&result).to_string()
-}
-
-fn sanitize(name: &str) -> String {
-    name.chars()
-        .map(|c| match c {
-            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
-            c if c.is_control() => '_',
-            c => c,
-        })
-        .collect::<String>()
-        .trim()
-        .chars()
-        .take(80)
-        .collect()
 }
 
 // ── HEAD request size check ──────────────────────────────────────────────────
@@ -468,9 +219,6 @@ fn get_content_length(url: &str) -> Option<u64> {
     );
 
     let response = if is_https {
-        // For HTTPS we need TLS — use a simple reqwest blocking call
-        // Fall back to spawning a quick process or just skip
-        // Since we already have reqwest, use a simple approach
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
@@ -506,10 +254,8 @@ fn get_content_length(url: &str) -> Option<u64> {
 // ── Injection script ─────────────────────────────────────────────────────────
 // Injected into every page the browser webview loads.
 // Detects video URLs via DOM scanning, fetch/XHR hooks, MutationObserver.
-// Also hooks MSE SourceBuffer + URL.createObjectURL for blob/MSE capture.
-// Streams MSE chunks directly to Rust via POST to localhost TCP server.
 
-fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: bool) -> String {
+fn make_inject_script(port: u16) -> String {
     format!(
         r#"
 (function() {{
@@ -517,119 +263,12 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
   if (window.__cs_injected) return;
   window.__cs_injected = true;
 
-  // ── Adblock + Popup Blocker settings (controlled from Settings UI) ──
-  window.__cs_adblock_enabled = {adblock_enabled};
-  window.__cs_popup_blocker_enabled = {popup_blocker_enabled};
-
-  // ── AD BLOCKER ──────────────────────────────────────────────────────────
-  const AD_DOMAINS = [
-    'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
-    'google-analytics.com', 'googletagmanager.com', 'googletagservices.com',
-    'adservice.google.com', 'pagead2.googlesyndication.com',
-    'facebook.com/tr', 'connect.facebook.net/en_US/fbevents',
-    'amazon-adsystem.com', 'ads-api.twitter.com',
-    'ads.yahoo.com', 'analytics.yahoo.com',
-    'moatads.com', 'scorecardresearch.com',
-    'outbrain.com', 'taboola.com', 'mgid.com', 'revcontent.com',
-    'adnxs.com', 'adsrvr.org', 'bidswitch.net', 'casalemedia.com',
-    'criteo.com', 'criteo.net', 'demdex.net', 'exelator.com',
-    'eyeota.net', 'krxd.net', 'lijit.com', 'mathtag.com',
-    'openx.net', 'pubmatic.com', 'rubiconproject.com',
-    'sharethis.com', 'sharethrough.com', 'smartadserver.com',
-    'spotxchange.com', 'teads.tv', 'yieldmo.com',
-    'imasdk.googleapis.com', 'tpc.googlesyndication.com',
-    'ad.doubleclick.net', 'static.doubleclick.net',
-    'mediavisor.doubleclick.net',
-    'quantserve.com', 'serving-sys.com', 'adtechus.com',
-    'advertising.com', 'atdmt.com', 'adform.net',
-    'zedo.com', 'mixpanel.com', 'hotjar.com',
-    'fullstory.com', 'mouseflow.com',
-  ];
-
-  const AD_CSS_SELECTORS = [
-    '[id*="google_ads"]', '[id*="ad-container"]', '[id*="ad_container"]',
-    '[id*="adunit"]', '[id*="ad-unit"]', '[id*="adslot"]',
-    '[class*="ad-container"]', '[class*="ad_container"]',
-    '[class*="ad-wrapper"]', '[class*="ad_wrapper"]',
-    '[class*="adsbygoogle"]', '[class*="ad-banner"]',
-    '[class*="sponsored-content"]', '[class*="sponsored_content"]',
-    'ins.adsbygoogle', 'iframe[src*="doubleclick"]',
-    'iframe[src*="googlesyndication"]', 'iframe[src*="googleads"]',
-    '[data-ad]', '[data-ad-slot]', '[data-ad-client]',
-    '[data-google-query-id]', '[data-ad-manager-id]',
-    '.ad-slot', '.ad-placement', '.ad-zone',
-  ];
-
-  let adblockStyleEl = null;
-
-  function isAdDomain(url) {{
-    try {{
-      const hostname = new URL(url, location.href).hostname;
-      return AD_DOMAINS.some(d => hostname.includes(d) || hostname.endsWith('.' + d));
-    }} catch(e) {{
-      return AD_DOMAINS.some(d => url.includes(d));
-    }}
-  }}
-
-  function injectAdblockCSS() {{
-    if (adblockStyleEl) return;
-    adblockStyleEl = document.createElement('style');
-    adblockStyleEl.id = '__cs_adblock_css';
-    adblockStyleEl.textContent = AD_CSS_SELECTORS.join(',\n') + ' {{ display: none !important; visibility: hidden !important; height: 0 !important; width: 0 !important; overflow: hidden !important; }}';
-    (document.head || document.documentElement).appendChild(adblockStyleEl);
-  }}
-
-  function removeAdblockCSS() {{
-    if (adblockStyleEl) {{
-      adblockStyleEl.remove();
-      adblockStyleEl = null;
-    }}
-  }}
-
-  // Expose enable/disable functions for live toggling from Rust
-  window.__cs_enableAdblock = function() {{
-    window.__cs_adblock_enabled = true;
-    injectAdblockCSS();
-  }};
-  window.__cs_disableAdblock = function() {{
-    window.__cs_adblock_enabled = false;
-    removeAdblockCSS();
-  }};
-
-  // Inject CSS immediately if enabled
-  if (window.__cs_adblock_enabled) {{
-    if (document.head || document.documentElement) {{
-      injectAdblockCSS();
-    }} else {{
-      document.addEventListener('DOMContentLoaded', () => {{
-        if (window.__cs_adblock_enabled) injectAdblockCSS();
-      }});
-    }}
-  }}
-
-  // ── POPUP BLOCKER ───────────────────────────────────────────────────────
-  const _origWindowOpen = window.open;
-  window.open = function(...args) {{
-    if (window.__cs_popup_blocker_enabled) {{
-      console.log('[CyberSnatcher] Popup blocked:', args[0]);
-      return null;
-    }}
-    return _origWindowOpen.apply(this, args);
-  }};
-
-  window.__cs_enablePopupBlocker = function() {{
-    window.__cs_popup_blocker_enabled = true;
-  }};
-  window.__cs_disablePopupBlocker = function() {{
-    window.__cs_popup_blocker_enabled = false;
-  }};
-
-  // ── VIDEO DETECTION (existing logic) ────────────────────────────────────
+  // ── VIDEO DETECTION ────────────────────────────────────────────────────
   const PORT = {port};
   const BASE = 'http://127.0.0.1:' + PORT;
   const reported = new Set();
 
-  // ── Smart filtering patterns (ported from Video Snatcher extension) ──
+  // ── Smart filtering patterns ──
   const AD_PAT = /ads?[_\-.]|track(ing)?|beacon|pixel|analytics|prebid|imasdk|doubleclick|googlesyndication|moatads|scorecardresearch/i;
   const THUMB_PAT = /thumb|preview|poster|sprite|placeholder|gif\.mp4|_default\.|rollover|\/key[s]?[\/\?]|\/key[0-9a-f]|_thumb|_small|_mini|sample|trailer_|teaser/i;
   const SKIP_EXT = /\.(php|html?|aspx?|jsp|json|js|css|png|jpe?g|gif|svg|woff2?|ico|ttf|eot|xml|m4s|m4f|cmfv|cmfa)(\?|#|$)/i;
@@ -639,7 +278,6 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
 
   function isJunk(url) {{
     if (AD_PAT.test(url) || THUMB_PAT.test(url) || SKIP_EXT.test(url) || TINY_PATH.test(url)) return true;
-    // Only apply SKIP_PATH to non-video URLs — CDNs serve real files from /embed/, /player/ paths
     if (SKIP_PATH.test(url) && !VID.test(url)) return true;
     return false;
   }}
@@ -672,7 +310,6 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
 
   function ok(u) {{
     if (!u || !VID.test(u)) return false;
-    // Extra check: skip .ts segments (HLS chunks, not full videos)
     if (/\.ts(\?|#|$)/i.test(u) && !/[_\-](full|complete|movie|episode)/i.test(u)) return false;
     return true;
   }}
@@ -691,16 +328,9 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
     if (og && ok(og.content)) {{ const [t,l] = classify(og.content); report(og.content, t, l); }}
   }}
 
-  // ── 2. Hook fetch (video detection + adblock) ──
+  // ── 2. Hook fetch ──
   const _fetch = window.fetch;
   window.fetch = async function(...args) {{
-    try {{
-      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-      // Adblock: block requests to ad domains
-      if (window.__cs_adblock_enabled && isAdDomain(url)) {{
-        return new Response('', {{ status: 204, statusText: 'Blocked by CyberSnatcher' }});
-      }}
-    }} catch(e) {{}}
     const res = await _fetch.apply(this, args);
     try {{
       const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
@@ -713,9 +343,8 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
     return res;
   }};
 
-  // ── 3. Hook XHR (video detection + adblock) ──
+  // ── 3. Hook XHR ──
   const _open = XMLHttpRequest.prototype.open;
-  const _xhrSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
     this.__cs_url = String(url);
     try {{
@@ -724,48 +353,6 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
     }} catch(e) {{}}
     return _open.call(this, method, url, ...rest);
   }};
-  XMLHttpRequest.prototype.send = function(...args) {{
-    if (window.__cs_adblock_enabled && this.__cs_url && isAdDomain(this.__cs_url)) {{
-      // Block ad XHR by aborting
-      return;
-    }}
-    return _xhrSend.apply(this, args);
-  }};
-
-  // ── Adblock: Block ad script/iframe creation ──
-  if (window.__cs_adblock_enabled) {{
-    const _createElement = document.createElement.bind(document);
-    document.createElement = function(tag, options) {{
-      const el = _createElement(tag, options);
-      if (window.__cs_adblock_enabled && (tag === 'script' || tag === 'iframe')) {{
-        const origSetAttr = el.setAttribute.bind(el);
-        el.setAttribute = function(name, value) {{
-          if ((name === 'src' || name === 'href') && isAdDomain(String(value))) {{
-            console.log('[CyberSnatcher] Blocked ad element:', tag, value);
-            return;
-          }}
-          return origSetAttr(name, value);
-        }};
-        const srcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src') ||
-                         Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
-        if (srcDesc && srcDesc.set) {{
-          const origSrcSet = srcDesc.set;
-          Object.defineProperty(el, 'src', {{
-            set: function(v) {{
-              if (window.__cs_adblock_enabled && isAdDomain(String(v))) {{
-                console.log('[CyberSnatcher] Blocked ad src:', v);
-                return;
-              }}
-              origSrcSet.call(this, v);
-            }},
-            get: srcDesc.get ? srcDesc.get.bind(el) : undefined,
-            configurable: true,
-          }});
-        }}
-      }}
-      return el;
-    }};
-  }}
 
   // ── 4. MutationObserver ──
   function startObserver() {{
@@ -784,9 +371,7 @@ fn make_inject_script(port: u16, adblock_enabled: bool, popup_blocker_enabled: b
 
 }})();
 "#,
-        port = port,
-        adblock_enabled = if adblock_enabled { "true" } else { "false" },
-        popup_blocker_enabled = if popup_blocker_enabled { "true" } else { "false" }
+        port = port
     )
 }
 
@@ -809,17 +394,10 @@ pub async fn open_browser_view(
     {
         let state = app.state::<BrowserState>();
         state.detected.lock().unwrap().clear();
-        state.captures.lock().unwrap().clear();
     }
 
     let port = ensure_server(&app);
-    let (adblock_on, popup_on) = {
-        let state = app.state::<BrowserState>();
-        let adblock = *state.adblock_enabled.lock().unwrap();
-        let popup = *state.popup_blocker_enabled.lock().unwrap();
-        (adblock, popup)
-    };
-    let inject_script = make_inject_script(port, adblock_on, popup_on);
+    let inject_script = make_inject_script(port);
 
     let app_nav = app.clone();
     let app_load = app.clone();
@@ -900,7 +478,6 @@ pub async fn close_browser(app: AppHandle) -> Result<(), String> {
     }
     let state = app.state::<BrowserState>();
     state.detected.lock().unwrap().clear();
-    state.captures.lock().unwrap().clear();
     Ok(())
 }
 
@@ -997,60 +574,4 @@ pub async fn remove_detected_video(app: AppHandle, url: String) -> Result<(), St
     let mut detected = state.detected.lock().unwrap();
     detected.retain(|v| v.url != url);
     Ok(())
-}
-
-/// Get browser settings (adblock + popup blocker state)
-#[tauri::command]
-pub async fn get_browser_settings(app: AppHandle) -> Result<BrowserSettings, String> {
-    let state = app.state::<BrowserState>();
-    let adblock_enabled = *state.adblock_enabled.lock().unwrap();
-    let popup_blocker_enabled = *state.popup_blocker_enabled.lock().unwrap();
-    Ok(BrowserSettings {
-        adblock_enabled,
-        popup_blocker_enabled,
-    })
-}
-
-/// Update browser settings and re-inject scripts into current webview
-#[tauri::command]
-pub async fn set_browser_settings(
-    app: AppHandle,
-    adblock_enabled: bool,
-    popup_blocker_enabled: bool,
-) -> Result<(), String> {
-    let state = app.state::<BrowserState>();
-    *state.adblock_enabled.lock().unwrap() = adblock_enabled;
-    *state.popup_blocker_enabled.lock().unwrap() = popup_blocker_enabled;
-
-    // If the browser webview is open, inject/remove the scripts live
-    if let Some(wv) = app.get_webview("browser-view") {
-        let js = format!(
-            "window.__cs_adblock_enabled = {}; window.__cs_popup_blocker_enabled = {};",
-            adblock_enabled, popup_blocker_enabled
-        );
-        wv.eval(&js).map_err(|e| e.to_string())?;
-
-        if adblock_enabled {
-            wv.eval("if (typeof window.__cs_enableAdblock === 'function') window.__cs_enableAdblock();")
-                .map_err(|e| e.to_string())?;
-        } else {
-            wv.eval("if (typeof window.__cs_disableAdblock === 'function') window.__cs_disableAdblock();")
-                .map_err(|e| e.to_string())?;
-        }
-        if popup_blocker_enabled {
-            wv.eval("if (typeof window.__cs_enablePopupBlocker === 'function') window.__cs_enablePopupBlocker();")
-                .map_err(|e| e.to_string())?;
-        } else {
-            wv.eval("if (typeof window.__cs_disablePopupBlocker === 'function') window.__cs_disablePopupBlocker();")
-                .map_err(|e| e.to_string())?;
-        }
-    }
-
-    Ok(())
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BrowserSettings {
-    pub adblock_enabled: bool,
-    pub popup_blocker_enabled: bool,
 }

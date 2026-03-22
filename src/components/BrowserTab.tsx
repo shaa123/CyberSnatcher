@@ -54,6 +54,8 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   const [hlsPendingPageUrl, setHlsPendingPageUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<DownloadJob | null>(null);
+  const [cropping, setCropping] = useState(false);
+  const [cropRect, setCropRect] = useState({ x: 100, y: 100, w: 400, h: 300 });
   const viewportRef = useRef<HTMLDivElement>(null);
 
   // ── Show/hide browser webview when tab switches ──
@@ -181,8 +183,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     const title = video.page_title || video.url.split("/").pop() || "download";
     const safeName = title.replace(/[<>:"/\\|?*]/g, "_").slice(0, 100) || "video";
     const jobId = `browser-${Date.now()}`;
-
-    if (video.video_type === "capture" && video.file_path) return;
 
     setDownloading(video.url);
     const cookies = await getCookies(video.url) || video.cookies || null;
@@ -315,6 +315,14 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           fontSize: "11px", fontWeight: 700, letterSpacing: "2px",
           padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap",
         }}>GO</button>
+
+        <button onClick={() => setCropping((p) => !p)} style={{
+          background: cropping ? "linear-gradient(135deg, #ff444433, #cc000022)" : "linear-gradient(135deg, #ff222211, #88000011)",
+          border: `1px solid ${cropping ? "#ff4444" : "#ff444466"}`, borderRadius: "3px",
+          color: cropping ? "#ff6666" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
+          fontSize: "11px", fontWeight: 700, letterSpacing: "2px",
+          padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap",
+        }}>{cropping ? "⏹ STOP" : "⏺ REC"}</button>
       </div>
 
       {/* ── Main area: browser viewport + side panel ── */}
@@ -371,7 +379,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                   {detected.map((v, i) => {
-                    const isCapture = v.video_type === "capture" && !!v.file_path;
                     const isDownloading = downloading === v.url;
                     return (
                       <div key={i} style={{
@@ -422,29 +429,22 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
                         </div>
 
                         {/* Button */}
-                        {isCapture ? (
-                          <div style={{ display: "flex", gap: "4px" }}>
-                            <button onClick={() => v.file_path && openFile(v.file_path)} style={sideBtnStyle("#00f5ff")}>▶ OPEN</button>
-                            <button onClick={() => v.file_path && showInFolder(v.file_path)} style={sideBtnStyle("#e040fb")}>◈ FOLDER</button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => !isDownloading && handleDownload(v)}
-                            disabled={isDownloading}
-                            style={{
-                              width: "100%", padding: "3px 8px",
-                              background: isDownloading ? "#3a2a5533" : "linear-gradient(135deg, #b400ff33, #7700cc22)",
-                              border: `1px solid ${isDownloading ? "var(--border-dim)" : "#b400ff"}`,
-                              borderRadius: "2px",
-                              color: isDownloading ? "var(--text-dim)" : "#e040fb",
-                              fontFamily: "'Orbitron', sans-serif",
-                              fontSize: "8px", fontWeight: 700, letterSpacing: "1px",
-                              cursor: isDownloading ? "not-allowed" : "pointer",
-                            }}
-                          >
-                            {isDownloading ? "..." : "⬇ GRAB"}
-                          </button>
-                        )}
+                        <button
+                          onClick={() => !isDownloading && handleDownload(v)}
+                          disabled={isDownloading}
+                          style={{
+                            width: "100%", padding: "3px 8px",
+                            background: isDownloading ? "#3a2a5533" : "linear-gradient(135deg, #b400ff33, #7700cc22)",
+                            border: `1px solid ${isDownloading ? "var(--border-dim)" : "#b400ff"}`,
+                            borderRadius: "2px",
+                            color: isDownloading ? "var(--text-dim)" : "#e040fb",
+                            fontFamily: "'Orbitron', sans-serif",
+                            fontSize: "8px", fontWeight: 700, letterSpacing: "1px",
+                            cursor: isDownloading ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {isDownloading ? "..." : "⬇ GRAB"}
+                        </button>
                       </div>
                     );
                   })}
@@ -531,6 +531,11 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
         )}
       </div>
 
+      {/* ── Crop overlay for recording ── */}
+      {cropping && (
+        <CropOverlay rect={cropRect} onRectChange={setCropRect} />
+      )}
+
       {/* ── HLS Quality picker modal ── */}
       {hlsQualities && (
         <div style={{
@@ -569,6 +574,133 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Resizable crop overlay ─────────────────────────────────────────────────
+
+interface CropRect { x: number; y: number; w: number; h: number }
+
+function CropOverlay({ rect, onRectChange }: { rect: CropRect; onRectChange: (r: CropRect) => void }) {
+  const dragging = useRef<{ type: string; startX: number; startY: number; startRect: CropRect } | null>(null);
+
+  const onPointerDown = useCallback((e: React.PointerEvent, type: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    dragging.current = { type, startX: e.clientX, startY: e.clientY, startRect: { ...rect } };
+  }, [rect]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const { type, startX, startY, startRect } = dragging.current;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    const next = { ...startRect };
+    const MIN = 80;
+
+    if (type === "move") {
+      next.x = startRect.x + dx;
+      next.y = startRect.y + dy;
+    } else {
+      if (type.includes("n")) { next.y = startRect.y + dy; next.h = Math.max(MIN, startRect.h - dy); }
+      if (type.includes("s")) { next.h = Math.max(MIN, startRect.h + dy); }
+      if (type.includes("w")) { next.x = startRect.x + dx; next.w = Math.max(MIN, startRect.w - dx); }
+      if (type.includes("e")) { next.w = Math.max(MIN, startRect.w + dx); }
+    }
+    onRectChange(next);
+  }, [onRectChange]);
+
+  const onPointerUp = useCallback(() => { dragging.current = null; }, []);
+
+  const handle = (pos: string, cursor: string, style: React.CSSProperties) => (
+    <div
+      onPointerDown={(e) => onPointerDown(e, pos)}
+      style={{
+        position: "absolute", zIndex: 3, ...style,
+        cursor, background: "#ff4444", borderRadius: "2px",
+        boxShadow: "0 0 6px #ff4444",
+      }}
+    />
+  );
+
+  return (
+    <div
+      style={{ position: "absolute", inset: 0, zIndex: 90, pointerEvents: "none" }}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+    >
+      {/* Dimmed mask around crop area */}
+      <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+        <defs>
+          <mask id="crop-mask">
+            <rect width="100%" height="100%" fill="white" />
+            <rect x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="black" />
+          </mask>
+        </defs>
+        <rect width="100%" height="100%" fill="rgba(0,0,0,0.6)" mask="url(#crop-mask)" />
+      </svg>
+
+      {/* Crop border */}
+      <div style={{
+        position: "absolute", left: rect.x, top: rect.y, width: rect.w, height: rect.h,
+        border: "2px solid #ff4444", borderRadius: "2px",
+        boxShadow: "0 0 0 1px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3), 0 0 20px #ff444444",
+        pointerEvents: "auto",
+      }}>
+        {/* Move handle (center area) */}
+        <div
+          onPointerDown={(e) => onPointerDown(e, "move")}
+          style={{ position: "absolute", inset: 8, cursor: "move", zIndex: 2 }}
+        />
+
+        {/* Corner handles */}
+        {handle("nw", "nw-resize", { top: -4, left: -4, width: 10, height: 10 })}
+        {handle("ne", "ne-resize", { top: -4, right: -4, width: 10, height: 10 })}
+        {handle("sw", "sw-resize", { bottom: -4, left: -4, width: 10, height: 10 })}
+        {handle("se", "se-resize", { bottom: -4, right: -4, width: 10, height: 10 })}
+
+        {/* Edge handles */}
+        {handle("n", "n-resize", { top: -3, left: "30%", width: "40%", height: 6 })}
+        {handle("s", "s-resize", { bottom: -3, left: "30%", width: "40%", height: 6 })}
+        {handle("w", "w-resize", { left: -3, top: "30%", width: 6, height: "40%" })}
+        {handle("e", "e-resize", { right: -3, top: "30%", width: 6, height: "40%" })}
+
+        {/* Size label */}
+        <div style={{
+          position: "absolute", bottom: -24, left: "50%", transform: "translateX(-50%)",
+          fontSize: "10px", color: "#ff6666", fontFamily: "'Orbitron', sans-serif",
+          letterSpacing: "1px", whiteSpace: "nowrap", fontWeight: 700,
+          background: "#0a0614ee", padding: "2px 8px", borderRadius: "2px",
+          border: "1px solid #ff444444",
+        }}>
+          {Math.round(rect.w)} × {Math.round(rect.h)}
+        </div>
+
+        {/* REC indicator */}
+        <div style={{
+          position: "absolute", top: 6, left: 8,
+          display: "flex", alignItems: "center", gap: "5px",
+          fontSize: "9px", color: "#ff4444", fontFamily: "'Orbitron', sans-serif",
+          letterSpacing: "2px", fontWeight: 700,
+        }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: "50%",
+            background: "#ff4444", boxShadow: "0 0 8px #ff4444",
+            animation: "blink-rec 1s infinite",
+          }} />
+          REC
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes blink-rec {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+      `}</style>
     </div>
   );
 }
