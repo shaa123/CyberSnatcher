@@ -70,7 +70,7 @@ pub async fn start_recording(
     let region_clone = Arc::clone(&state.capture_region);
 
     std::thread::spawn(move || {
-        let target_interval = std::time::Duration::from_millis(33); // ~30 fps
+        let target_interval = std::time::Duration::from_millis(16); // ~60 fps
 
         loop {
             let start = Instant::now();
@@ -226,7 +226,7 @@ fn encode_gif(frames: Vec<RecordingFrame>) -> Result<String, String> {
             &mut rgb,
             10, // quality/speed balance
         );
-        frame.delay = 3; // 30ms ≈ 30 fps
+        frame.delay = 2; // 20ms ≈ 50 fps (GIF minimum practical delay)
 
         encoder
             .write_frame(&frame)
