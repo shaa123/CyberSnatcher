@@ -59,12 +59,9 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   const [hlsPendingPageUrl, setHlsPendingPageUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<DownloadJob | null>(null);
-  const [cropping, setCropping] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingResult, setRecordingResult] = useState<string | null>(null);
-  const [cropRect, setCropRect] = useState({ x: 100, y: 100, w: 400, h: 300 });
   const viewportRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
 
   // ── Show/hide browser webview when tab switches ──
   useEffect(() => {
@@ -145,30 +142,25 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     return () => { observer.disconnect(); window.removeEventListener("resize", updatePosition); };
   }, [browserOpen, visible, updatePosition]);
 
-  // ── Recording: convert crop rect to screen coords ──
-  const getCropScreenCoords = useCallback(async () => {
-    const el = overlayRef.current;
+  // ── Recording: capture the browser viewport area ──
+  const getViewportScreenCoords = useCallback(async () => {
+    const el = viewportRef.current;
     if (!el) return { x: 0, y: 0, w: 400, h: 300 };
     const bounds = el.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
     const win = getCurrentWindow();
     const scaleFactor = await win.scaleFactor();
     const winPos = await win.outerPosition();
-    // winPos is in physical pixels, bounds are in CSS pixels
     return {
-      x: winPos.x + (bounds.left + cropRect.x) * scaleFactor,
-      y: winPos.y + (bounds.top + cropRect.y) * scaleFactor,
-      w: cropRect.w * scaleFactor,
-      h: cropRect.h * scaleFactor,
+      x: winPos.x + bounds.left * scaleFactor,
+      y: winPos.y + bounds.top * scaleFactor,
+      w: bounds.width * scaleFactor,
+      h: bounds.height * scaleFactor,
     };
-  }, [cropRect]);
+  }, []);
 
   const handleStartRecording = useCallback(async () => {
     setRecordingResult(null);
-    const coords = await getCropScreenCoords();
-    // Dismiss the crop overlay and restore the browser before recording
-    setCropping(false);
-    showBrowser().catch(() => {});
+    const coords = await getViewportScreenCoords();
     setRecording(true);
     try {
       await startRecording(coords.x, coords.y, coords.w, coords.h);
@@ -176,7 +168,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
       console.error("Failed to start recording:", e);
       setRecording(false);
     }
-  }, [getCropScreenCoords]);
+  }, [getViewportScreenCoords]);
 
   const handleStopRecording = useCallback(async () => {
     setRecording(false);
@@ -187,8 +179,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
       console.error("Failed to stop recording:", e);
     }
   }, []);
-
-  // Region is set at start — no live updates needed since overlay is dismissed
 
   // ── Navigation ──
   const handleGo = useCallback(async () => {
@@ -369,13 +359,10 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap",
         }}>GO</button>
 
-        <button onClick={recording ? handleStopRecording : async () => {
-          hideBrowser().catch(() => {});
-          setCropping(true);
-        }} style={{
-          background: recording ? "linear-gradient(135deg, #ff444433, #cc000022)" : cropping ? "linear-gradient(135deg, #ff444422, #cc000011)" : "linear-gradient(135deg, #ff222211, #88000011)",
-          border: `1px solid ${recording ? "#ff4444" : cropping ? "#ff444488" : "#ff444466"}`, borderRadius: "3px",
-          color: recording ? "#ff6666" : cropping ? "#ff444499" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
+        <button onClick={recording ? handleStopRecording : handleStartRecording} style={{
+          background: recording ? "linear-gradient(135deg, #ff444433, #cc000022)" : "linear-gradient(135deg, #ff222211, #88000011)",
+          border: `1px solid ${recording ? "#ff4444" : "#ff444466"}`, borderRadius: "3px",
+          color: recording ? "#ff6666" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
           fontSize: "11px", fontWeight: 700, letterSpacing: "2px",
           padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap",
         }}>{recording ? "⏹ STOP" : "⏺ REC"}</button>
@@ -587,19 +574,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
         )}
       </div>
 
-      {/* ── Crop overlay for recording (inside main area, below toolbar) ── */}
-      {cropping && (
-        <div ref={overlayRef} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90, pointerEvents: "none" }}>
-          <CropOverlay
-            rect={cropRect}
-            onRectChange={setCropRect}
-            onClose={() => { setCropping(false); showBrowser().catch(() => {}); }}
-            recording={false}
-            onStartRecording={handleStartRecording}
-          />
-        </div>
-      )}
-
       {/* ── Recording result toast ── */}
       {recordingResult && (
         <div style={{
@@ -669,156 +643,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
 }
 
 // ── Resizable crop overlay ─────────────────────────────────────────────────
-
-interface CropRect { x: number; y: number; w: number; h: number }
-
-function CropOverlay({ rect, onRectChange, onClose, recording, onStartRecording }: { rect: CropRect; onRectChange: (r: CropRect) => void; onClose: () => void; recording?: boolean; onStartRecording?: () => void }) {
-  const dragging = useRef<{ type: string; startX: number; startY: number; startRect: CropRect } | null>(null);
-
-  const onPointerDown = useCallback((e: React.PointerEvent, type: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragging.current = { type, startX: e.clientX, startY: e.clientY, startRect: { ...rect } };
-  }, [rect]);
-
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!dragging.current) return;
-    const { type, startX, startY, startRect } = dragging.current;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-
-    const next = { ...startRect };
-    const MIN = 80;
-
-    if (type === "move") {
-      next.x = startRect.x + dx;
-      next.y = startRect.y + dy;
-    } else {
-      if (type.includes("n")) { next.y = startRect.y + dy; next.h = Math.max(MIN, startRect.h - dy); }
-      if (type.includes("s")) { next.h = Math.max(MIN, startRect.h + dy); }
-      if (type.includes("w")) { next.x = startRect.x + dx; next.w = Math.max(MIN, startRect.w - dx); }
-      if (type.includes("e")) { next.w = Math.max(MIN, startRect.w + dx); }
-    }
-    onRectChange(next);
-  }, [onRectChange]);
-
-  const onPointerUp = useCallback(() => { dragging.current = null; }, []);
-
-  const handle = (pos: string, cursor: string, style: React.CSSProperties) => (
-    <div
-      onPointerDown={(e) => onPointerDown(e, pos)}
-      style={{
-        position: "absolute", zIndex: 3, ...style,
-        cursor, background: "#ff4444", borderRadius: "2px",
-        boxShadow: "0 0 6px #ff4444",
-      }}
-    />
-  );
-
-  return (
-    <div
-      style={{ position: "absolute", inset: 0, zIndex: 90, pointerEvents: "auto" }}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-    >
-      {/* Dimmed regions around crop area (4 divs instead of SVG mask) */}
-      <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: Math.max(0, rect.y), background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", top: Math.max(0, rect.y), left: 0, width: Math.max(0, rect.x), height: rect.h, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", top: Math.max(0, rect.y), left: rect.x + rect.w, right: 0, height: rect.h, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", top: rect.y + rect.h, left: 0, width: "100%", bottom: 0, background: "rgba(0,0,0,0.6)", pointerEvents: "none" }} />
-
-      {/* Crop border */}
-      <div style={{
-        position: "absolute", left: rect.x, top: rect.y, width: rect.w, height: rect.h,
-        border: "2px solid #ff4444", borderRadius: "2px",
-        boxShadow: "0 0 0 1px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.3), 0 0 20px #ff444444",
-      }}>
-        {/* Move handle (center area) */}
-        <div
-          onPointerDown={(e) => onPointerDown(e, "move")}
-          style={{ position: "absolute", inset: 8, cursor: "move", zIndex: 2 }}
-        />
-
-        {/* Corner handles */}
-        {handle("nw", "nw-resize", { top: -4, left: -4, width: 10, height: 10 })}
-        {handle("ne", "ne-resize", { top: -4, right: -4, width: 10, height: 10 })}
-        {handle("sw", "sw-resize", { bottom: -4, left: -4, width: 10, height: 10 })}
-        {handle("se", "se-resize", { bottom: -4, right: -4, width: 10, height: 10 })}
-
-        {/* Edge handles */}
-        {handle("n", "n-resize", { top: -3, left: "30%", width: "40%", height: 6 })}
-        {handle("s", "s-resize", { bottom: -3, left: "30%", width: "40%", height: 6 })}
-        {handle("w", "w-resize", { left: -3, top: "30%", width: 6, height: "40%" })}
-        {handle("e", "e-resize", { right: -3, top: "30%", width: 6, height: "40%" })}
-
-        {/* Size label */}
-        <div style={{
-          position: "absolute", bottom: -24, left: "50%", transform: "translateX(-50%)",
-          fontSize: "10px", color: "#ff6666", fontFamily: "'Orbitron', sans-serif",
-          letterSpacing: "1px", whiteSpace: "nowrap", fontWeight: 700,
-          background: "#0a0614ee", padding: "2px 8px", borderRadius: "2px",
-          border: "1px solid #ff444444",
-        }}>
-          {Math.round(rect.w)} × {Math.round(rect.h)}
-        </div>
-
-        {/* Recording controls */}
-        <div style={{
-          position: "absolute", top: 6, left: 8, right: 8,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          zIndex: 4,
-        }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: "5px",
-            fontSize: "9px", color: "#ff4444", fontFamily: "'Orbitron', sans-serif",
-            letterSpacing: "2px", fontWeight: 700,
-          }}>
-            {recording && (
-              <span style={{
-                width: 8, height: 8, borderRadius: "50%",
-                background: "#ff4444", boxShadow: "0 0 8px #ff4444",
-                animation: "blink-rec 1s infinite",
-              }} />
-            )}
-            {recording ? "REC" : "SELECT AREA"}
-          </div>
-          <div style={{ display: "flex", gap: "4px" }}>
-            {!recording && onStartRecording && (
-              <button
-                onPointerDown={(e) => { e.stopPropagation(); onStartRecording(); }}
-                style={{
-                  background: "#ff4444", border: "none", borderRadius: "3px",
-                  color: "#fff", fontFamily: "'Orbitron', sans-serif",
-                  fontSize: "8px", fontWeight: 700, letterSpacing: "1px",
-                  padding: "3px 10px", cursor: "pointer",
-                  boxShadow: "0 0 8px #ff444466",
-                }}
-              >⏺ START</button>
-            )}
-            <button
-              onPointerDown={(e) => { e.stopPropagation(); onClose(); }}
-              style={{
-                background: recording ? "#ff4444" : "#666", border: "none", borderRadius: "3px",
-                color: "#fff", fontFamily: "'Orbitron', sans-serif",
-                fontSize: "8px", fontWeight: 700, letterSpacing: "1px",
-                padding: "3px 10px", cursor: "pointer",
-                boxShadow: recording ? "0 0 8px #ff444466" : "none",
-              }}
-            >{recording ? "⏹ STOP" : "✕ CLOSE"}</button>
-          </div>
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes blink-rec {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.3; }
-        }
-      `}</style>
-    </div>
-  );
-}
 
 const navBtnStyle: React.CSSProperties = {
   width: "30px", height: "30px", display: "flex",
