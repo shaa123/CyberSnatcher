@@ -25,12 +25,22 @@ pub async fn open_crop_overlay(
     .transparent(true)
     .shadow(false) // required on Windows for transparency to work (v2 enables shadows by default)
     .always_on_top(true)
-    .resizable(false) // we handle resize ourselves via pointer events
+    .resizable(true) // must be true so setSize() works from JS
     .skip_taskbar(true);
 
-    builder
+    let overlay = builder
         .build()
         .map_err(|e| format!("Failed to create overlay: {e}"))?;
+
+    // Close overlay when main window closes so it doesn't linger
+    let overlay_clone = overlay.clone();
+    if let Some(main_win) = app.get_webview_window("main") {
+        main_win.on_window_event(move |event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let _ = overlay_clone.close();
+            }
+        });
+    }
 
     Ok(())
 }
