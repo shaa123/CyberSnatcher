@@ -173,7 +173,7 @@ fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<RecordingFrame, Stri
         .ok_or_else(|| "No monitor found".to_string())?;
 
     let image = monitor
-        .capture_region(x, y, w, h)
+        .capture_region(x as u32, y as u32, w, h)
         .map_err(|e| format!("Capture failed: {}", e))?;
 
     Ok(RecordingFrame {
