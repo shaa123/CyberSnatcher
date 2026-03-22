@@ -506,14 +506,14 @@ export default function App() {
               </div>
 
               {/* Quality slider */}
-              {format !== "MP3 Audio" && (
+              {format !== "Default" && format !== "MP3 Audio" && (
                 <div style={{ marginBottom: "18px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                     <label style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--purple)" }}>
                       ▸ QUALITY
                     </label>
                     <span style={{ fontSize: "17px", color: "#00f5ff", fontWeight: 700, letterSpacing: "1px", fontFamily: "'Share Tech Mono', monospace" }}>
-                      {format === "Default" ? `${QUALITIES[qualityIdx]} (max)` : QUALITIES[qualityIdx]}
+                      {QUALITIES[qualityIdx]}
                     </span>
                   </div>
                   <div style={{ position: "relative", padding: "4px 0" }}>
