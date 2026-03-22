@@ -165,27 +165,23 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   }, [cropRect]);
 
   const handleStartRecording = useCallback(async () => {
-    setCropping(true);
-    setRecording(true);
     setRecordingResult(null);
-    hideBrowser().catch(() => {});
-    // Wait a tick for the overlay to mount so overlayRef is available
-    await new Promise((r) => setTimeout(r, 50));
     const coords = await getCropScreenCoords();
+    // Dismiss the crop overlay and restore the browser before recording
+    setCropping(false);
+    setPreviewSrc(null);
+    showBrowser().catch(() => {});
+    setRecording(true);
     try {
       await startRecording(coords.x, coords.y, coords.w, coords.h);
     } catch (e) {
       console.error("Failed to start recording:", e);
       setRecording(false);
-      showBrowser().catch(() => {});
     }
   }, [getCropScreenCoords]);
 
   const handleStopRecording = useCallback(async () => {
     setRecording(false);
-    setCropping(false);
-    setPreviewSrc(null);
-    showBrowser().catch(() => {});
     try {
       const path = await stopRecording();
       setRecordingResult(path);
@@ -194,13 +190,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     }
   }, []);
 
-  // Send region updates to backend when crop rect changes during recording
-  useEffect(() => {
-    if (!recording) return;
-    getCropScreenCoords().then((coords) => {
-      updateRecordingRegion(coords.x, coords.y, coords.w, coords.h).catch(() => {});
-    });
-  }, [recording, cropRect, getCropScreenCoords]);
+  // Region is set at start — no live updates needed since overlay is dismissed
 
   // ── Navigation ──
   const handleGo = useCallback(async () => {
@@ -617,8 +607,8 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           <CropOverlay
             rect={cropRect}
             onRectChange={setCropRect}
-            onClose={recording ? handleStopRecording : () => { setCropping(false); setPreviewSrc(null); showBrowser().catch(() => {}); }}
-            recording={recording}
+            onClose={() => { setCropping(false); setPreviewSrc(null); showBrowser().catch(() => {}); }}
+            recording={false}
             onStartRecording={handleStartRecording}
           />
         </div>
