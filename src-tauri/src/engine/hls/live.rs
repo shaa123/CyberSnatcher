@@ -17,9 +17,9 @@ pub async fn record_live(
     cancelled: &AtomicBool,
 ) -> Result<String, String> {
     let mut seen: HashSet<u64> = HashSet::new();
-    let mut all_segments: Vec<Vec<u8>> = vec![];
     let mut init_segment: Option<Vec<u8>> = None;
     let mut total_bytes: u64 = 0;
+    let mut seg_count: u64 = 0;
     let start = std::time::Instant::now();
 
     let decryptor = if let Some(ref enc) = initial_playlist.encryption {
@@ -30,6 +30,18 @@ pub async fn record_live(
 
     if let Some(ref init_url) = initial_playlist.init_map_url {
         init_segment = Some(client.get_bytes(init_url).await?);
+    }
+
+    // Stream segments directly to disk instead of buffering in RAM
+    let is_fmp4 = init_segment.is_some();
+    let ext = if is_fmp4 { "mp4" } else { "ts" };
+    let temp_path = format!("{}/{}_temp.{}", output_dir, filename, ext);
+    let final_path = format!("{}/{}.mp4", output_dir, filename);
+
+    use std::io::Write;
+    let mut file = std::fs::File::create(&temp_path).map_err(|e| e.to_string())?;
+    if let Some(ref init) = init_segment {
+        file.write_all(init).map_err(|e| e.to_string())?;
     }
 
     while !cancelled.load(Ordering::Relaxed) {
@@ -45,7 +57,10 @@ pub async fn record_live(
 
         if init_segment.is_none() {
             if let Some(ref init_url) = playlist.init_map_url {
-                init_segment = client.get_bytes(init_url).await.ok();
+                if let Ok(data) = client.get_bytes(init_url).await {
+                    file.write_all(&data).map_err(|e| e.to_string())?;
+                    init_segment = Some(data);
+                }
             }
         }
 
@@ -61,14 +76,24 @@ pub async fn record_live(
                         data = dec.decrypt(&data, seg.iv.as_deref(), seg.sequence)?;
                     }
                     total_bytes += data.len() as u64;
-                    all_segments.push(data);
+                    seg_count += 1;
+                    // Write directly to disk instead of holding in memory
+                    file.write_all(&data).map_err(|e| e.to_string())?;
 
-                    let _ = app.emit(&format!("download-progress-{}", job_id), serde_json::json!({
-                        "status": "recording",
-                        "segments": all_segments.len(),
-                        "bytes": total_bytes,
-                        "elapsed_seconds": start.elapsed().as_secs(),
-                    }));
+                    let elapsed = start.elapsed().as_secs();
+                    let speed = if elapsed > 0 { total_bytes / elapsed } else { 0 };
+                    let speed_str = if speed > 1_048_576 { format!("{:.1} MB/s", speed as f64 / 1_048_576.0) }
+                        else { format!("{:.0} KB/s", speed as f64 / 1024.0) };
+                    let _ = app.emit("download-progress", crate::types::DownloadProgress {
+                        job_id: job_id.to_string(),
+                        percent: -1.0, // indeterminate for live
+                        speed: speed_str,
+                        eta: format!("{}:{:02}", elapsed / 60, elapsed % 60),
+                        status: "downloading".to_string(),
+                        log_line: format!("Live: {} segments, {:.1} MB", seg_count, total_bytes as f64 / 1_048_576.0),
+                        file_path: None,
+                        file_size: Some(total_bytes),
+                    });
                 }
                 Err(e) => log::warn!("Live segment {} failed: {}", seg.sequence, e),
             }
@@ -78,18 +103,11 @@ pub async fn record_live(
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
-    if all_segments.is_empty() { return Err("No segments recorded".into()); }
+    drop(file); // flush and close
 
-    let is_fmp4 = init_segment.is_some();
-    let ext = if is_fmp4 { "mp4" } else { "ts" };
-    let temp_path = format!("{}/{}_temp.{}", output_dir, filename, ext);
-    let final_path = format!("{}/{}.mp4", output_dir, filename);
-
-    {
-        use std::io::Write;
-        let mut file = std::fs::File::create(&temp_path).map_err(|e| e.to_string())?;
-        if let Some(ref init) = init_segment { file.write_all(init).map_err(|e| e.to_string())?; }
-        for seg in &all_segments { file.write_all(seg).map_err(|e| e.to_string())?; }
+    if seg_count == 0 {
+        std::fs::remove_file(&temp_path).ok();
+        return Err("No segments recorded".into());
     }
 
     // Remux with ffmpeg if available

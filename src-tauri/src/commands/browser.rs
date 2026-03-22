@@ -274,7 +274,7 @@ fn make_inject_script(port: u16) -> String {
   const SKIP_EXT = /\.(php|html?|aspx?|jsp|json|js|css|png|jpe?g|gif|svg|woff2?|ico|ttf|eot|xml|m4s|m4f|cmfv|cmfa)(\?|#|$)/i;
   const SKIP_PATH = /\/(embed|watch|view_video|player|login|signup|register|checkout)\b/i;
   const TINY_PATH = /[_\-](120|160|180|240|320)p?[_\-.]|[_\-]small|[_\-]thumb|[_\-]preview|_low\b/i;
-  const VID = /\.(mp4|webm|mkv|avi|mov|flv|wmv|m4v|m3u8|mpd|ts)([\/\?#]|$)/i;
+  const VID = /\.(mp4|webm|mkv|avi|mov|flv|wmv|m4v|m3u8|m3u|mpd|ts)([\/\?#]|$)/i;
 
   function isJunk(url) {{
     if (AD_PAT.test(url) || THUMB_PAT.test(url) || SKIP_EXT.test(url) || TINY_PATH.test(url)) return true;
@@ -302,7 +302,7 @@ fn make_inject_script(port: u16) -> String {
   }}
 
   function classify(url) {{
-    if (/\.m3u8/i.test(url)) return ['hls', 'HLS'];
+    if (/\.m3u8?([\/\?#]|$)/i.test(url)) return ['hls', 'HLS'];
     if (/\.mpd/i.test(url)) return ['dash', 'DASH'];
     const m = url.match(/\.(mp4|webm|mkv|avi|mov|flv|wmv|m4v)/i);
     return m ? ['direct', m[1].toUpperCase()] : ['direct', 'VIDEO'];
@@ -345,7 +345,7 @@ fn make_inject_script(port: u16) -> String {
     return res;
   }};
 
-  // ── 3. Hook XHR ──
+  // ── 3. Hook XHR (open + load for content-type check) ──
   const _open = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
     this.__cs_url = String(url);
@@ -355,11 +355,26 @@ fn make_inject_script(port: u16) -> String {
     }} catch(e) {{}}
     return _open.call(this, method, url, ...rest);
   }};
+  const _send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function(...args) {{
+    this.addEventListener('load', function() {{
+      try {{
+        const ct = this.getResponseHeader('content-type') || '';
+        const u = this.__cs_url || '';
+        if ((ct.startsWith('video/') || ct.includes('mpegurl') || ct.includes('dash+xml')) && !isJunk(u)) {{
+          report(u, ct.includes('mpegurl') ? 'hls' : ct.includes('dash') ? 'dash' : 'direct', 'STREAM');
+        }}
+      }} catch(e) {{}}
+    }});
+    return _send.apply(this, args);
+  }};
 
-  // ── 4. MutationObserver ──
+  // ── 4. MutationObserver (debounced) ──
+  let _scanTimer = 0;
+  function debouncedScan() {{ clearTimeout(_scanTimer); _scanTimer = setTimeout(scanDOM, 300); }}
   function startObserver() {{
     if (!document.body) return;
-    new MutationObserver(() => scanDOM())
+    new MutationObserver(debouncedScan)
       .observe(document.body, {{ childList: true, subtree: true }});
   }}
   if (document.body) startObserver();
