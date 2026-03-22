@@ -19,6 +19,9 @@ import {
   nativeDownload,
   getBrowserCookies,
   removeDetectedVideo,
+  startRecording,
+  stopRecording,
+  updateRecordingRegion,
 } from "../lib/tauri";
 import type { DetectedVideo } from "../lib/types";
 import type { HlsQuality } from "../lib/tauri";
@@ -55,8 +58,11 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<DownloadJob | null>(null);
   const [cropping, setCropping] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingResult, setRecordingResult] = useState<string | null>(null);
   const [cropRect, setCropRect] = useState({ x: 100, y: 100, w: 400, h: 300 });
   const viewportRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
   // ── Show/hide browser webview when tab switches ──
   useEffect(() => {
@@ -136,6 +142,53 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     updatePosition();
     return () => { observer.disconnect(); window.removeEventListener("resize", updatePosition); };
   }, [browserOpen, visible, updatePosition]);
+
+  // ── Recording: convert crop rect to screen coords ──
+  const getCropScreenCoords = useCallback(() => {
+    const el = overlayRef.current;
+    if (!el) return { x: 0, y: 0, w: 400, h: 300 };
+    const bounds = el.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    return {
+      x: (bounds.left + cropRect.x) * dpr,
+      y: (bounds.top + cropRect.y) * dpr,
+      w: cropRect.w * dpr,
+      h: cropRect.h * dpr,
+    };
+  }, [cropRect]);
+
+  const handleStartRecording = useCallback(async () => {
+    setCropping(true);
+    setRecording(true);
+    setRecordingResult(null);
+    // Wait a tick for the overlay to mount so overlayRef is available
+    await new Promise((r) => setTimeout(r, 50));
+    const coords = getCropScreenCoords();
+    try {
+      await startRecording(coords.x, coords.y, coords.w, coords.h);
+    } catch (e) {
+      console.error("Failed to start recording:", e);
+      setRecording(false);
+    }
+  }, [getCropScreenCoords]);
+
+  const handleStopRecording = useCallback(async () => {
+    setRecording(false);
+    setCropping(false);
+    try {
+      const path = await stopRecording();
+      setRecordingResult(path);
+    } catch (e) {
+      console.error("Failed to stop recording:", e);
+    }
+  }, []);
+
+  // Send region updates to backend when crop rect changes during recording
+  useEffect(() => {
+    if (!recording) return;
+    const coords = getCropScreenCoords();
+    updateRecordingRegion(coords.x, coords.y, coords.w, coords.h).catch(() => {});
+  }, [recording, cropRect, getCropScreenCoords]);
 
   // ── Navigation ──
   const handleGo = useCallback(async () => {
@@ -316,13 +369,13 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap",
         }}>GO</button>
 
-        <button onClick={() => setCropping((p) => !p)} style={{
-          background: cropping ? "linear-gradient(135deg, #ff444433, #cc000022)" : "linear-gradient(135deg, #ff222211, #88000011)",
-          border: `1px solid ${cropping ? "#ff4444" : "#ff444466"}`, borderRadius: "3px",
-          color: cropping ? "#ff6666" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
+        <button onClick={recording ? handleStopRecording : () => setCropping(true)} style={{
+          background: recording ? "linear-gradient(135deg, #ff444433, #cc000022)" : cropping ? "linear-gradient(135deg, #ff444422, #cc000011)" : "linear-gradient(135deg, #ff222211, #88000011)",
+          border: `1px solid ${recording ? "#ff4444" : cropping ? "#ff444488" : "#ff444466"}`, borderRadius: "3px",
+          color: recording ? "#ff6666" : cropping ? "#ff444499" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
           fontSize: "11px", fontWeight: 700, letterSpacing: "2px",
           padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap",
-        }}>{cropping ? "⏹ STOP" : "⏺ REC"}</button>
+        }}>{recording ? "⏹ STOP" : "⏺ REC"}</button>
       </div>
 
       {/* ── Main area: browser viewport + side panel ── */}
@@ -533,8 +586,40 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
 
       {/* ── Crop overlay for recording (inside main area, below toolbar) ── */}
       {cropping && (
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90, pointerEvents: "none" }}>
-          <CropOverlay rect={cropRect} onRectChange={setCropRect} onClose={() => setCropping(false)} />
+        <div ref={overlayRef} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90, pointerEvents: "none" }}>
+          <CropOverlay
+            rect={cropRect}
+            onRectChange={setCropRect}
+            onClose={recording ? handleStopRecording : () => setCropping(false)}
+            recording={recording}
+            onStartRecording={handleStartRecording}
+          />
+        </div>
+      )}
+
+      {/* ── Recording result toast ── */}
+      {recordingResult && (
+        <div style={{
+          position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
+          zIndex: 100, background: "#0a0a1a", border: "1px solid #00f5ff66",
+          borderRadius: "6px", padding: "10px 16px", display: "flex",
+          alignItems: "center", gap: "10px", maxWidth: "90%",
+        }}>
+          <span style={{ color: "#00ff88", fontSize: "12px", fontFamily: "'Orbitron', sans-serif" }}>
+            GIF SAVED
+          </span>
+          <span style={{ color: "#aaa", fontSize: "11px", fontFamily: "'Share Tech Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {recordingResult}
+          </span>
+          <button onClick={() => { import("../lib/tauri").then(m => m.showInFolder(recordingResult!)); }} style={{
+            background: "none", border: "1px solid #00f5ff44", borderRadius: "3px",
+            color: "#00f5ff", fontSize: "10px", padding: "3px 8px", cursor: "pointer",
+            fontFamily: "'Orbitron', sans-serif",
+          }}>SHOW</button>
+          <button onClick={() => setRecordingResult(null)} style={{
+            background: "none", border: "none", color: "#666", fontSize: "14px",
+            cursor: "pointer", padding: "0 4px",
+          }}>×</button>
         </div>
       )}
 
@@ -584,7 +669,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
 
 interface CropRect { x: number; y: number; w: number; h: number }
 
-function CropOverlay({ rect, onRectChange, onClose }: { rect: CropRect; onRectChange: (r: CropRect) => void; onClose: () => void }) {
+function CropOverlay({ rect, onRectChange, onClose, recording, onStartRecording }: { rect: CropRect; onRectChange: (r: CropRect) => void; onClose: () => void; recording?: boolean; onStartRecording?: () => void }) {
   const dragging = useRef<{ type: string; startX: number; startY: number; startRect: CropRect } | null>(null);
 
   const onPointerDown = useCallback((e: React.PointerEvent, type: string) => {
@@ -675,7 +760,7 @@ function CropOverlay({ rect, onRectChange, onClose }: { rect: CropRect; onRectCh
           {Math.round(rect.w)} × {Math.round(rect.h)}
         </div>
 
-        {/* REC indicator + STOP button */}
+        {/* Recording controls */}
         <div style={{
           position: "absolute", top: 6, left: 8, right: 8,
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -686,23 +771,39 @@ function CropOverlay({ rect, onRectChange, onClose }: { rect: CropRect; onRectCh
             fontSize: "9px", color: "#ff4444", fontFamily: "'Orbitron', sans-serif",
             letterSpacing: "2px", fontWeight: 700,
           }}>
-            <span style={{
-              width: 8, height: 8, borderRadius: "50%",
-              background: "#ff4444", boxShadow: "0 0 8px #ff4444",
-              animation: "blink-rec 1s infinite",
-            }} />
-            REC
+            {recording && (
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: "#ff4444", boxShadow: "0 0 8px #ff4444",
+                animation: "blink-rec 1s infinite",
+              }} />
+            )}
+            {recording ? "REC" : "SELECT AREA"}
           </div>
-          <button
-            onPointerDown={(e) => { e.stopPropagation(); onClose(); }}
-            style={{
-              background: "#ff4444", border: "none", borderRadius: "3px",
-              color: "#fff", fontFamily: "'Orbitron', sans-serif",
-              fontSize: "8px", fontWeight: 700, letterSpacing: "1px",
-              padding: "3px 10px", cursor: "pointer",
-              boxShadow: "0 0 8px #ff444466",
-            }}
-          >⏹ STOP</button>
+          <div style={{ display: "flex", gap: "4px" }}>
+            {!recording && onStartRecording && (
+              <button
+                onPointerDown={(e) => { e.stopPropagation(); onStartRecording(); }}
+                style={{
+                  background: "#ff4444", border: "none", borderRadius: "3px",
+                  color: "#fff", fontFamily: "'Orbitron', sans-serif",
+                  fontSize: "8px", fontWeight: 700, letterSpacing: "1px",
+                  padding: "3px 10px", cursor: "pointer",
+                  boxShadow: "0 0 8px #ff444466",
+                }}
+              >⏺ START</button>
+            )}
+            <button
+              onPointerDown={(e) => { e.stopPropagation(); onClose(); }}
+              style={{
+                background: recording ? "#ff4444" : "#666", border: "none", borderRadius: "3px",
+                color: "#fff", fontFamily: "'Orbitron', sans-serif",
+                fontSize: "8px", fontWeight: 700, letterSpacing: "1px",
+                padding: "3px 10px", cursor: "pointer",
+                boxShadow: recording ? "0 0 8px #ff444466" : "none",
+              }}
+            >{recording ? "⏹ STOP" : "✕ CLOSE"}</button>
+          </div>
         </div>
       </div>
 

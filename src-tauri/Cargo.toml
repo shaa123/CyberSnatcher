@@ -32,3 +32,6 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["full"] }
 dash-mpd = { version = "0.16", default-features = false }
 base64 = "0.22.1"
+xcap = "0.8"
+gif = "0.13"
+image = "0.25"

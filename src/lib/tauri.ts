@@ -68,6 +68,16 @@ export const getBrowserCookies = (url: string) =>
 export const removeDetectedVideo = (url: string) =>
   invoke<void>("remove_detected_video", { url });
 
+// ── Recording commands ───────────────────────────────────────────────────────
+
+export const startRecording = (x: number, y: number, w: number, h: number) =>
+  invoke<void>("start_recording", { x, y, w, h });
+
+export const stopRecording = () => invoke<string>("stop_recording");
+
+export const updateRecordingRegion = (x: number, y: number, w: number, h: number) =>
+  invoke<void>("update_recording_region", { x, y, w, h });
+
 // ── HLS stream commands ──────────────────────────────────────────────────────
 
 export interface HlsQuality {
