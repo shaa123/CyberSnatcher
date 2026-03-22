@@ -22,8 +22,8 @@ import {
   removeDetectedVideo,
   startRecording,
   stopRecording,
-  updateRecordingRegion,
-  capturePreview,
+
+
 } from "../lib/tauri";
 import type { DetectedVideo } from "../lib/types";
 import type { HlsQuality } from "../lib/tauri";
@@ -63,7 +63,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   const [recording, setRecording] = useState(false);
   const [recordingResult, setRecordingResult] = useState<string | null>(null);
   const [cropRect, setCropRect] = useState({ x: 100, y: 100, w: 400, h: 300 });
-  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -169,7 +168,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     const coords = await getCropScreenCoords();
     // Dismiss the crop overlay and restore the browser before recording
     setCropping(false);
-    setPreviewSrc(null);
     showBrowser().catch(() => {});
     setRecording(true);
     try {
@@ -372,17 +370,6 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
         }}>GO</button>
 
         <button onClick={recording ? handleStopRecording : async () => {
-          const el = viewportRef.current;
-          if (el) {
-            const b = el.getBoundingClientRect();
-            const win = getCurrentWindow();
-            const sf = await win.scaleFactor();
-            const wp = await win.outerPosition();
-            try {
-              const src = await capturePreview(wp.x + b.left * sf, wp.y + b.top * sf, b.width * sf, b.height * sf);
-              setPreviewSrc(src);
-            } catch { /* continue without preview */ }
-          }
           hideBrowser().catch(() => {});
           setCropping(true);
         }} style={{
@@ -603,11 +590,10 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
       {/* ── Crop overlay for recording (inside main area, below toolbar) ── */}
       {cropping && (
         <div ref={overlayRef} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90, pointerEvents: "none" }}>
-          {previewSrc && <img src={previewSrc} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", pointerEvents: "none", zIndex: 0 }} />}
           <CropOverlay
             rect={cropRect}
             onRectChange={setCropRect}
-            onClose={() => { setCropping(false); setPreviewSrc(null); showBrowser().catch(() => {}); }}
+            onClose={() => { setCropping(false); showBrowser().catch(() => {}); }}
             recording={false}
             onStartRecording={handleStartRecording}
           />
