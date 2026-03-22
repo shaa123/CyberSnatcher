@@ -330,11 +330,11 @@ pub async fn download_hls(
     // Step 7: remux TS → MP4 via ffmpeg
     let ffmpeg_result = remux_to_mp4(app, &ts_path, &mp4_path).await;
 
-    // Clean up temp .ts file
-    let _ = std::fs::remove_file(&ts_path);
-
     match ffmpeg_result {
         Ok(_) => {
+            // Only delete the temp .ts once we know ffmpeg succeeded
+            let _ = std::fs::remove_file(&ts_path);
+
             let mp4_size = std::fs::metadata(&mp4_path).map(|m| m.len()).unwrap_or(0);
             let mp4_str = mp4_path.to_string_lossy().to_string();
 
@@ -355,8 +355,13 @@ pub async fn download_hls(
             Ok(mp4_str)
         }
         Err(e) => {
-            // The ts was already deleted... just return the error
-            Err(format!("ffmpeg remux failed: {}", e))
+            // Leave the .ts on disk so the user still has their data.
+            // Return its path as a fallback so the caller can surface it.
+            let ts_str = ts_path.to_string_lossy().to_string();
+            Err(format!(
+                "ffmpeg remux failed: {}. Raw stream preserved at: {}",
+                e, ts_str
+            ))
         }
     }
 }
@@ -485,8 +490,11 @@ fn parse_media_playlist(lines: &[&str], base_url: &str) -> HlsMediaPlaylist {
     let has_endlist = lines.iter().any(|l| l.contains("#EXT-X-ENDLIST"));
     let has_vod = lines.iter().any(|l| l.contains("#EXT-X-PLAYLIST-TYPE:VOD"));
 
-    // Live detection: no ENDLIST, not VOD, short duration, few segments
-    let is_live = !has_endlist && !has_vod && total_duration < 120.0 && segments.len() < 30;
+    // Per HLS spec (RFC 8216 §4.3.3.4): absence of #EXT-X-ENDLIST is the
+    // authoritative signal that a playlist is live.  Duration/segment-count
+    // heuristics cause false positives (short VODs) and false negatives
+    // (long-running live streams), so they are intentionally omitted.
+    let is_live = !has_endlist && !has_vod;
 
     HlsMediaPlaylist {
         segments,
@@ -664,19 +672,18 @@ fn resolve_url(base: &str, relative: &str) -> String {
 
 fn extract_attr(line: &str, name: &str) -> Option<String> {
     let search = format!("{}=", name);
-    if let Some(pos) = line.find(&search) {
-        let start = pos + search.len();
-        let rest = &line[start..];
-        // Handle quoted values
-        if rest.starts_with('"') {
-            let end = rest[1..].find('"').map(|p| p + 1).unwrap_or(rest.len());
-            Some(rest[1..end].to_string())
-        } else {
-            let end = rest.find(',').or_else(|| rest.find(' ')).unwrap_or(rest.len());
-            Some(rest[..end].to_string())
-        }
+    // Require the match to be at the start of the attribute list or immediately
+    // after a comma, so that "IV=" does not substring-match inside "KEYFORMATVERSIONS=".
+    let pos = line.find(&search).filter(|&p| p == 0 || line.as_bytes()[p - 1] == b',')?;
+    let start = pos + search.len();
+    let rest = &line[start..];
+    // Handle quoted values
+    if rest.starts_with('"') {
+        let end = rest[1..].find('"').map(|p| p + 1).unwrap_or(rest.len());
+        Some(rest[1..end].to_string())
     } else {
-        None
+        let end = rest.find(',').or_else(|| rest.find(' ')).unwrap_or(rest.len());
+        Some(rest[..end].to_string())
     }
 }
 
@@ -887,10 +894,12 @@ pub async fn download_hls_live(
     emit_progress(app, job_id, 94.0, "converting", "Remuxing to MP4...");
 
     let ffmpeg_result = remux_to_mp4(app, &ts_path, &mp4_path).await;
-    let _ = std::fs::remove_file(&ts_path);
 
     match ffmpeg_result {
         Ok(_) => {
+            // Only delete the temp .ts once we know ffmpeg succeeded
+            let _ = std::fs::remove_file(&ts_path);
+
             // Patch duration
             crate::mp4patch::patch_mp4_duration(&mp4_path, actual_duration);
 
@@ -910,6 +919,13 @@ pub async fn download_hls_live(
 
             Ok(mp4_str)
         }
-        Err(e) => Err(format!("ffmpeg remux failed: {}", e)),
+        Err(e) => {
+            // Leave the .ts on disk so the user still has their recording.
+            let ts_str = ts_path.to_string_lossy().to_string();
+            Err(format!(
+                "ffmpeg remux failed: {}. Raw stream preserved at: {}",
+                e, ts_str
+            ))
+        }
     }
 }

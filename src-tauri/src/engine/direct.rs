@@ -29,8 +29,15 @@ pub async fn download_direct(
     if start_byte > 0 { req = req.header("Range", format!("bytes={}-", start_byte)); }
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() && resp.status().as_u16() != 206 {
+    let status = resp.status().as_u16();
+    if status != 200 && status != 206 {
         return Err(format!("HTTP {}", resp.status()));
+    }
+
+    // If we requested a range but got 200 (server ignored Range header),
+    // the response is the full file — reset and overwrite instead of appending.
+    if start_byte > 0 && status == 200 {
+        start_byte = 0;
     }
 
     let mut file = if start_byte > 0 {
