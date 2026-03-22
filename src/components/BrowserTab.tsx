@@ -22,6 +22,7 @@ import {
   startRecording,
   stopRecording,
   updateRecordingRegion,
+  capturePreview,
 } from "../lib/tauri";
 import type { DetectedVideo } from "../lib/types";
 import type { HlsQuality } from "../lib/tauri";
@@ -61,6 +62,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   const [recording, setRecording] = useState(false);
   const [recordingResult, setRecordingResult] = useState<string | null>(null);
   const [cropRect, setCropRect] = useState({ x: 100, y: 100, w: 400, h: 300 });
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -177,6 +179,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
   const handleStopRecording = useCallback(async () => {
     setRecording(false);
     setCropping(false);
+    setPreviewSrc(null);
     showBrowser().catch(() => {});
     try {
       const path = await stopRecording();
@@ -372,7 +375,19 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap",
         }}>GO</button>
 
-        <button onClick={recording ? handleStopRecording : () => { hideBrowser().catch(() => {}); setCropping(true); }} style={{
+        <button onClick={recording ? handleStopRecording : async () => {
+          const el = viewportRef.current;
+          if (el) {
+            const b = el.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            try {
+              const src = await capturePreview(b.left * dpr, b.top * dpr, b.width * dpr, b.height * dpr);
+              setPreviewSrc(src);
+            } catch { /* continue without preview */ }
+          }
+          hideBrowser().catch(() => {});
+          setCropping(true);
+        }} style={{
           background: recording ? "linear-gradient(135deg, #ff444433, #cc000022)" : cropping ? "linear-gradient(135deg, #ff444422, #cc000011)" : "linear-gradient(135deg, #ff222211, #88000011)",
           border: `1px solid ${recording ? "#ff4444" : cropping ? "#ff444488" : "#ff444466"}`, borderRadius: "3px",
           color: recording ? "#ff6666" : cropping ? "#ff444499" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
@@ -590,10 +605,11 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
       {/* ── Crop overlay for recording (inside main area, below toolbar) ── */}
       {cropping && (
         <div ref={overlayRef} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90, pointerEvents: "none" }}>
+          {previewSrc && <img src={previewSrc} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", pointerEvents: "none", zIndex: 0 }} />}
           <CropOverlay
             rect={cropRect}
             onRectChange={setCropRect}
-            onClose={recording ? handleStopRecording : () => { setCropping(false); showBrowser().catch(() => {}); }}
+            onClose={recording ? handleStopRecording : () => { setCropping(false); setPreviewSrc(null); showBrowser().catch(() => {}); }}
             recording={recording}
             onStartRecording={handleStartRecording}
           />

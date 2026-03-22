@@ -1,3 +1,4 @@
+use base64::Engine;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::State;
@@ -163,6 +164,21 @@ pub async fn update_recording_region(
     let mut region = state.capture_region.lock().map_err(|e| e.to_string())?;
     *region = (x as i32, y as i32, w.max(1.0) as u32, h.max(1.0) as u32);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn capture_preview(x: f64, y: f64, w: f64, h: f64) -> Result<String, String> {
+    let monitors = xcap::Monitor::all().map_err(|e| format!("{}", e))?;
+    let monitor = monitors.into_iter().next().ok_or("No monitor")?;
+    let image = monitor
+        .capture_region(x as u32, y as u32, w.max(1.0) as u32, h.max(1.0) as u32)
+        .map_err(|e| format!("{}", e))?;
+    let mut png_buf = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut png_buf, image::ImageFormat::Png)
+        .map_err(|e| format!("{}", e))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(png_buf.into_inner());
+    Ok(format!("data:image/png;base64,{}", b64))
 }
 
 fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<RecordingFrame, String> {

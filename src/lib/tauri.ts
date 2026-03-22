@@ -78,6 +78,9 @@ export const stopRecording = () => invoke<string>("stop_recording");
 export const updateRecordingRegion = (x: number, y: number, w: number, h: number) =>
   invoke<void>("update_recording_region", { x, y, w, h });
 
+export const capturePreview = (x: number, y: number, w: number, h: number) =>
+  invoke<string>("capture_preview", { x, y, w, h });
+
 // ── HLS stream commands ──────────────────────────────────────────────────────
 
 export interface HlsQuality {

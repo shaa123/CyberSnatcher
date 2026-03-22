@@ -58,6 +58,7 @@ pub fn run() {
             commands::recording::start_recording,
             commands::recording::stop_recording,
             commands::recording::update_recording_region,
+            commands::recording::capture_preview,
             // Stream commands
             commands::stream::parse_hls,
             commands::stream::download_hls_stream,
