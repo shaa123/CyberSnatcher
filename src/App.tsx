@@ -135,6 +135,8 @@ export default function App() {
   useEffect(() => {
     const unlisten = listen<DownloadProgress>("download-progress", (event) => {
       const p = event.payload;
+      // Ignore browser-tab downloads — BrowserTab handles its own progress
+      if (p.job_id?.startsWith("browser-")) return;
       if (p.job_id !== currentJobId && currentJobId) return;
 
       if (p.log_line && !p.log_line.startsWith("CYBERPROG")) {

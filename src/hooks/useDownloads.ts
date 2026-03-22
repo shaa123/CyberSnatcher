@@ -10,6 +10,8 @@ export function useDownloadEvents() {
   useEffect(() => {
     const unlisten = listen<DownloadProgress>("download-progress", (event) => {
       const p = event.payload;
+      // Browser tab handles its own download progress
+      if (p.job_id?.startsWith("browser-")) return;
 
       if (p.log_line) {
         appendLog(p.job_id, p.log_line);
