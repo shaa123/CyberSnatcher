@@ -161,6 +161,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     setCropping(true);
     setRecording(true);
     setRecordingResult(null);
+    hideBrowser().catch(() => {});
     // Wait a tick for the overlay to mount so overlayRef is available
     await new Promise((r) => setTimeout(r, 50));
     const coords = getCropScreenCoords();
@@ -169,12 +170,14 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
     } catch (e) {
       console.error("Failed to start recording:", e);
       setRecording(false);
+      showBrowser().catch(() => {});
     }
   }, [getCropScreenCoords]);
 
   const handleStopRecording = useCallback(async () => {
     setRecording(false);
     setCropping(false);
+    showBrowser().catch(() => {});
     try {
       const path = await stopRecording();
       setRecordingResult(path);
@@ -369,7 +372,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           padding: "8px 16px", cursor: "pointer", whiteSpace: "nowrap",
         }}>GO</button>
 
-        <button onClick={recording ? handleStopRecording : () => setCropping(true)} style={{
+        <button onClick={recording ? handleStopRecording : () => { hideBrowser().catch(() => {}); setCropping(true); }} style={{
           background: recording ? "linear-gradient(135deg, #ff444433, #cc000022)" : cropping ? "linear-gradient(135deg, #ff444422, #cc000011)" : "linear-gradient(135deg, #ff222211, #88000011)",
           border: `1px solid ${recording ? "#ff4444" : cropping ? "#ff444488" : "#ff444466"}`, borderRadius: "3px",
           color: recording ? "#ff6666" : cropping ? "#ff444499" : "#ff444499", fontFamily: "'Orbitron', sans-serif",
@@ -590,7 +593,7 @@ export default function BrowserTab({ visible, downloadFolder }: Props) {
           <CropOverlay
             rect={cropRect}
             onRectChange={setCropRect}
-            onClose={recording ? handleStopRecording : () => setCropping(false)}
+            onClose={recording ? handleStopRecording : () => { setCropping(false); showBrowser().catch(() => {}); }}
             recording={recording}
             onStartRecording={handleStartRecording}
           />
