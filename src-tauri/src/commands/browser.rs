@@ -962,9 +962,11 @@ pub async fn remove_detected_video(app: AppHandle, url: String) -> Result<(), St
 #[tauri::command]
 pub async fn get_browser_settings(app: AppHandle) -> Result<BrowserSettings, String> {
     let state = app.state::<BrowserState>();
+    let adblock_enabled = *state.adblock_enabled.lock().unwrap();
+    let popup_blocker_enabled = *state.popup_blocker_enabled.lock().unwrap();
     Ok(BrowserSettings {
-        adblock_enabled: *state.adblock_enabled.lock().unwrap(),
-        popup_blocker_enabled: *state.popup_blocker_enabled.lock().unwrap(),
+        adblock_enabled,
+        popup_blocker_enabled,
     })
 }
 
