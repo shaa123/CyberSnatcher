@@ -11,8 +11,9 @@ export const analyzeUrl = (url: string) => invoke<UrlAnalysis>("analyze_url", { 
 
 export const startDownload = (
   jobId: string, url: string, title: string,
-  outputDir: string, formatQuality: string, formatType: string
-) => invoke<void>("start_download", { jobId, url, title, outputDir, formatQuality, formatType });
+  outputDir: string, formatQuality: string, formatType: string,
+  writeSubs?: boolean
+) => invoke<void>("start_download", { jobId, url, title, outputDir, formatQuality, formatType, writeSubs: writeSubs || false });
 
 export const cancelDownload = (jobId: string) => invoke<void>("cancel_download", { jobId });
 

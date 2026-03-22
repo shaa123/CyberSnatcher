@@ -773,10 +773,9 @@ pub async fn open_browser_view(
     let port = ensure_server(&app);
     let (adblock_on, popup_on) = {
         let state = app.state::<BrowserState>();
-        (
-            *state.adblock_enabled.lock().unwrap(),
-            *state.popup_blocker_enabled.lock().unwrap(),
-        )
+        let adblock = *state.adblock_enabled.lock().unwrap();
+        let popup = *state.popup_blocker_enabled.lock().unwrap();
+        (adblock, popup)
     };
     let inject_script = make_inject_script(port, adblock_on, popup_on);
 
@@ -962,9 +961,11 @@ pub async fn remove_detected_video(app: AppHandle, url: String) -> Result<(), St
 #[tauri::command]
 pub async fn get_browser_settings(app: AppHandle) -> Result<BrowserSettings, String> {
     let state = app.state::<BrowserState>();
+    let adblock_enabled = *state.adblock_enabled.lock().unwrap();
+    let popup_blocker_enabled = *state.popup_blocker_enabled.lock().unwrap();
     Ok(BrowserSettings {
-        adblock_enabled: *state.adblock_enabled.lock().unwrap(),
-        popup_blocker_enabled: *state.popup_blocker_enabled.lock().unwrap(),
+        adblock_enabled,
+        popup_blocker_enabled,
     })
 }
 

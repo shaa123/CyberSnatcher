@@ -9,6 +9,16 @@ import type { DownloadProgress, DownloadItem, ConversionPreset } from "./lib/typ
 
 const FORMATS = ["Default", "MP4", "MP3 Audio", "WEBM", "MKV"];
 const QUALITIES = ["2160p", "1440p", "1080p", "720p", "480p", "360p"];
+
+const SMART_PRESETS = [
+  { label: "BEST QUALITY", desc: "Max resolution", format: "Default", quality: "best", icon: "◆" },
+  { label: "1080p MP4", desc: "Balanced", format: "MP4", quality: "1080p", icon: "▣" },
+  { label: "720p SAVE", desc: "Smaller file", format: "MP4", quality: "720p", icon: "▤" },
+  { label: "AUDIO ONLY", desc: "MP3 extract", format: "MP3 Audio", quality: "audio", icon: "♫" },
+] as const;
+
+const URL_REGEX = /https?:\/\/[^\s<>"']+/;
+
 const PLATFORMS = [
   { name: "YouTube", color: "#ff003c" },
   { name: "Twitter/X", color: "#00f5ff" },
@@ -60,6 +70,11 @@ export default function App() {
   const [converting, setConverting] = useState(false);
   const [filePath, setFilePath] = useState<string | null>(null);
   const [fileSize, setFileSize] = useState<number | null>(null);
+  const [clipboardWatch, setClipboardWatch] = useState(true);
+  const [lastClipboard, setLastClipboard] = useState("");
+  const [writeSubs, setWriteSubs] = useState(false);
+  const [duplicateUrl, setDuplicateUrl] = useState<string | null>(null);
+  const [smartMode, setSmartMode] = useState(true);
   const logRef = useRef<HTMLDivElement>(null);
 
   const addLog = useCallback((msg: string) => {
@@ -93,6 +108,29 @@ export default function App() {
     }).catch(() => setYtdlpOk(false));
     checkFfmpeg().then(setFfmpegOk).catch(() => setFfmpegOk(false));
   }, []);
+
+  // ── Clipboard monitoring ──
+  useEffect(() => {
+    if (!clipboardWatch) return;
+    const iv = setInterval(async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && text !== lastClipboard && URL_REGEX.test(text.trim())) {
+          const trimmed = text.trim().split(/\s/)[0];
+          if (trimmed !== url && trimmed !== lastClipboard) {
+            setLastClipboard(trimmed);
+            if (phase === "idle" || phase === "done" || phase === "error") {
+              setUrl(trimmed);
+              const p = detectPlatform(trimmed);
+              if (p) addLog(`Clipboard detected: ${p.name} URL`);
+              else addLog("Clipboard detected: URL auto-filled");
+            }
+          }
+        }
+      } catch {}
+    }, 1500);
+    return () => clearInterval(iv);
+  }, [clipboardWatch, lastClipboard, url, phase, addLog]);
 
   useEffect(() => {
     const unlisten = listen<DownloadProgress>("download-progress", (event) => {
@@ -203,11 +241,24 @@ export default function App() {
     }
   }, [downloadFolder, addLog]);
 
+  // ── Duplicate detection ──
+  const checkDuplicate = useCallback((targetUrl: string): boolean => {
+    const normalizeUrl = (u: string) => u.replace(/^https?:\/\//, "").replace(/\/$/, "").replace(/[?#].*$/, "");
+    const norm = normalizeUrl(targetUrl);
+    return history.some((h) => normalizeUrl(h.url) === norm);
+  }, [history]);
+
   const handleProbe = useCallback(async () => {
     if (!url.trim()) {
       setPhase("error");
       addLog("ERR: No target URL provided.");
       setTimeout(() => setPhase("idle"), 1500);
+      return;
+    }
+
+    // Duplicate detection
+    if (checkDuplicate(url)) {
+      setDuplicateUrl(url);
       return;
     }
 
@@ -248,7 +299,7 @@ export default function App() {
     }
 
     await probeWithYtdlp();
-  }, [url, addLog, downloadFolder]);
+  }, [url, addLog, downloadFolder, checkDuplicate]);
 
   const probeWithYtdlp = useCallback(async () => {
     setPhase("fetching");
@@ -283,12 +334,12 @@ export default function App() {
     addLog(`Initiating ${format} extraction...`);
 
     try {
-      await startDownload(jobId, url, videoTitle || url, downloadFolder, formatToQuality(format, qualityIdx), format);
+      await startDownload(jobId, url, videoTitle || url, downloadFolder, formatToQuality(format, qualityIdx), format, writeSubs);
     } catch (e) {
       addLog(`ERR: ${e}`);
       setPhase("error");
     }
-  }, [url, format, qualityIdx, downloadFolder, addLog, videoTitle]);
+  }, [url, format, qualityIdx, downloadFolder, addLog, videoTitle, writeSubs]);
 
   const handleCancel = useCallback(() => {
     if (currentJobId) cancelDownload(currentJobId);
@@ -325,6 +376,52 @@ export default function App() {
     setFilePath(null);
     setFileSize(null);
   };
+
+  const applyPreset = useCallback((preset: typeof SMART_PRESETS[number]) => {
+    setFormat(preset.format);
+    if (preset.quality !== "best" && preset.quality !== "audio") {
+      const idx = QUALITIES.indexOf(preset.quality);
+      if (idx >= 0) setQualityIdx(idx);
+    }
+  }, []);
+
+  const forceProbeDuplicate = useCallback(async () => {
+    setDuplicateUrl(null);
+    const isHls = url.includes(".m3u8");
+    const isDirect = [".mp4", ".webm", ".mkv", ".avi", ".mov", ".ts"].some(ext => url.toLowerCase().includes(ext));
+    if (isHls || isDirect) {
+      setPhase("downloading");
+      setLog([]);
+      setProgress(0);
+      setFilePath(null);
+      setFileSize(null);
+      const jobId = `dl-${Date.now()}`;
+      setCurrentJobId(jobId);
+      const safeName = url.split("/").pop()?.split("?")[0]?.replace(/[<>:"/\\|?*]/g, "_") || "download";
+      setVideoTitle(safeName);
+      addLog(isHls ? "HLS stream detected — routing to native engine..." : "Direct file detected — downloading...");
+      try {
+        const result = await nativeDownload(jobId, url, downloadFolder, safeName);
+        setFilePath(result);
+        setFileSize(null);
+        setProgress(100);
+        setPhase("done");
+        addLog("EXTRACTION COMPLETE ✓");
+      } catch (e) {
+        const errStr = String(e);
+        if (errStr === "USE_YTDLP") {
+          addLog("Native engine deferred — falling back to yt-dlp...");
+          await probeWithYtdlp();
+        } else {
+          addLog(`ERR: ${e}`);
+          setPhase("error");
+          setTimeout(() => setPhase("idle"), 2500);
+        }
+      }
+      return;
+    }
+    await probeWithYtdlp();
+  }, [url, addLog, downloadFolder, probeWithYtdlp]);
 
   const platform = detectPlatform(url);
 
@@ -488,6 +585,61 @@ export default function App() {
                 </button>
               </div>
 
+              {/* Options row: clipboard + subs */}
+              <div style={{ display: "flex", gap: "16px", marginBottom: "14px", alignItems: "center" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: clipboardWatch ? "#00f5ff" : "var(--text-dim)", letterSpacing: "1px", userSelect: "none" }}
+                  onClick={() => setClipboardWatch(!clipboardWatch)}>
+                  <span style={{
+                    width: "14px", height: "14px", border: `1px solid ${clipboardWatch ? "#00f5ff" : "var(--border-dim)"}`,
+                    borderRadius: "2px", display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    background: clipboardWatch ? "#00f5ff15" : "transparent", transition: "all 0.2s",
+                  }}>{clipboardWatch ? "✓" : ""}</span>
+                  CLIPBOARD MONITOR
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: writeSubs ? "#e040fb" : "var(--text-dim)", letterSpacing: "1px", userSelect: "none" }}
+                  onClick={() => setWriteSubs(!writeSubs)}>
+                  <span style={{
+                    width: "14px", height: "14px", border: `1px solid ${writeSubs ? "#e040fb" : "var(--border-dim)"}`,
+                    borderRadius: "2px", display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    background: writeSubs ? "#b400ff15" : "transparent", transition: "all 0.2s",
+                  }}>{writeSubs ? "✓" : ""}</span>
+                  DOWNLOAD SUBTITLES
+                </label>
+              </div>
+
+              {/* Smart Mode Presets */}
+              {smartMode && phase !== "downloading" && (
+                <div style={{ marginBottom: "14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <label style={{ fontSize: "12px", letterSpacing: "3px", color: "var(--purple)" }}>▸ SMART MODE</label>
+                    <span style={{ fontSize: "10px", color: "var(--text-dimmer)", letterSpacing: "1px", cursor: "pointer" }}
+                      onClick={() => setSmartMode(false)}>HIDE</span>
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    {SMART_PRESETS.map((p) => (
+                      <button key={p.label} onClick={() => applyPreset(p)} style={{
+                        flex: "1 1 0", minWidth: "120px", padding: "10px 8px", textAlign: "center",
+                        background: format === p.format && (p.quality === "best" || p.quality === "audio" || QUALITIES[qualityIdx] === p.quality)
+                          ? "#b400ff18" : "var(--input-bg)",
+                        border: `1px solid ${format === p.format && (p.quality === "best" || p.quality === "audio" || QUALITIES[qualityIdx] === p.quality)
+                          ? "#b400ff" : "var(--border-dim)"}`,
+                        borderRadius: "3px", cursor: "pointer", transition: "all 0.2s",
+                      }}>
+                        <div style={{ fontSize: "14px", marginBottom: "2px" }}>{p.icon}</div>
+                        <div style={{ fontSize: "10px", color: "#e040fb", letterSpacing: "1px", fontFamily: "'Orbitron', sans-serif", fontWeight: 700 }}>{p.label}</div>
+                        <div style={{ fontSize: "9px", color: "var(--text-dimmer)", marginTop: "2px" }}>{p.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!smartMode && phase !== "downloading" && (
+                <div style={{ marginBottom: "8px", textAlign: "right" }}>
+                  <span style={{ fontSize: "10px", color: "var(--text-dimmer)", letterSpacing: "1px", cursor: "pointer" }}
+                    onClick={() => setSmartMode(true)}>SHOW SMART MODE</span>
+                </div>
+              )}
+
               {/* Format selector */}
               <label style={{ display: "block", fontSize: "17px", letterSpacing: "3px", color: "var(--purple)", marginBottom: "8px" }}>
                 ▸ OUTPUT FORMAT
@@ -506,14 +658,14 @@ export default function App() {
               </div>
 
               {/* Quality slider */}
-              {format !== "MP3 Audio" && (
+              {format !== "Default" && format !== "MP3 Audio" && (
                 <div style={{ marginBottom: "18px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                     <label style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--purple)" }}>
                       ▸ QUALITY
                     </label>
                     <span style={{ fontSize: "17px", color: "#00f5ff", fontWeight: 700, letterSpacing: "1px", fontFamily: "'Share Tech Mono', monospace" }}>
-                      {format === "Default" ? `${QUALITIES[qualityIdx]} (max)` : QUALITIES[qualityIdx]}
+                      {QUALITIES[qualityIdx]}
                     </span>
                   </div>
                   <div style={{ position: "relative", padding: "4px 0" }}>
@@ -734,6 +886,42 @@ export default function App() {
               <p style={{ fontSize: "17px", color: "#2a1e3a", letterSpacing: "2px" }}>
                 CYBERSNATCHER · POWERED BY yt-dlp + ffmpeg · TAURI 2.x
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Detection Modal */}
+      {duplicateUrl && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={() => setDuplicateUrl(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: "var(--panel)", border: "1px solid #fbbf24", borderRadius: "4px",
+            padding: "24px 28px", maxWidth: "420px", width: "90%",
+          }}>
+            <div style={{ fontSize: "14px", color: "#fbbf24", letterSpacing: "2px", fontFamily: "'Orbitron', sans-serif", fontWeight: 700, marginBottom: "12px" }}>
+              DUPLICATE DETECTED
+            </div>
+            <p style={{ fontSize: "13px", color: "var(--text-dim)", marginBottom: "6px", lineHeight: 1.5 }}>
+              This URL has already been downloaded:
+            </p>
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", wordBreak: "break-all", marginBottom: "16px",
+              padding: "8px", background: "var(--input-bg)", border: "1px solid var(--border-dim)", borderRadius: "2px" }}>
+              {duplicateUrl}
+            </p>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => setDuplicateUrl(null)} style={{
+                flex: 1, padding: "10px", background: "transparent", border: "1px solid var(--border-dim)",
+                borderRadius: "3px", color: "var(--text-dim)", fontFamily: "'Orbitron', sans-serif",
+                fontSize: "11px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer",
+              }}>CANCEL</button>
+              <button onClick={() => forceProbeDuplicate()} style={{
+                flex: 1, padding: "10px", background: "#fbbf2422", border: "1px solid #fbbf24",
+                borderRadius: "3px", color: "#fbbf24", fontFamily: "'Orbitron', sans-serif",
+                fontSize: "11px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer",
+              }}>DOWNLOAD ANYWAY</button>
             </div>
           </div>
         </div>
