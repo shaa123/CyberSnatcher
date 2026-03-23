@@ -3,6 +3,7 @@ import { downloadDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar";
 import SettingsModal from "./components/Settings/SettingsModal";
+import ConverterTab from "./components/ConverterTab";
 import { analyzeUrl, startDownload, cancelDownload, checkYtdlp, checkFfmpeg, showInFolder, openFile, convertFile, nativeDownload, updateYtdlp } from "./lib/tauri";
 import type { DownloadProgress, DownloadItem, ConversionPreset } from "./lib/types";
 
@@ -44,6 +45,7 @@ function formatToQuality(f: string, qualityIdx: number): string {
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState<"downloader" | "converter">("downloader");
   // ── All existing state (unchanged) ──
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState("Default");
@@ -348,14 +350,48 @@ export default function App() {
       <div style={{ position: "fixed", top: "-100px", right: "-100px", width: "400px", height: "400px", borderRadius: "50%", background: "radial-gradient(circle, #b400ff18 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
       <div style={{ position: "fixed", bottom: "-150px", left: "-150px", width: "500px", height: "500px", borderRadius: "50%", background: "radial-gradient(circle, #00f5ff12 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
 
-      {/* ── Settings button ── */}
+      {/* ── Tab bar + Settings ── */}
       <div style={{
         display: "flex", alignItems: "center",
         borderBottom: "1px solid var(--border-purple)",
         background: "var(--panel)", flexShrink: 0,
         position: "relative", zIndex: 2,
-        justifyContent: "flex-end",
+        justifyContent: "space-between",
       }}>
+        <div style={{ display: "flex", gap: "0" }}>
+          <button
+            onClick={() => setActiveTab("downloader")}
+            style={{
+              background: activeTab === "downloader" ? "#b400ff12" : "transparent",
+              border: "none",
+              borderBottom: activeTab === "downloader" ? "2px solid #b400ff" : "2px solid transparent",
+              cursor: "pointer",
+              padding: "10px 20px",
+              color: activeTab === "downloader" ? "#e040fb" : "var(--text-dim)",
+              fontFamily: "system-ui, -apple-system, sans-serif",
+              fontSize: "17px", fontWeight: 700,
+              transition: "all 0.2s",
+            }}
+          >
+            DOWNLOADER
+          </button>
+          <button
+            onClick={() => setActiveTab("converter")}
+            style={{
+              background: activeTab === "converter" ? "#00f5ff12" : "transparent",
+              border: "none",
+              borderBottom: activeTab === "converter" ? "2px solid #00f5ff" : "2px solid transparent",
+              cursor: "pointer",
+              padding: "10px 20px",
+              color: activeTab === "converter" ? "#00f5ff" : "var(--text-dim)",
+              fontFamily: "system-ui, -apple-system, sans-serif",
+              fontSize: "17px", fontWeight: 700,
+              transition: "all 0.2s",
+            }}
+          >
+            CONVERTER
+          </button>
+        </div>
         <button
           onClick={() => setShowSettings(true)}
           title="Settings"
@@ -379,8 +415,14 @@ export default function App() {
         </button>
       </div>
 
-      {/* ── Downloads ── */}
+      {/* ── Main content area ── */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>
+
+        {/* ── Converter Tab ── */}
+        {activeTab === "converter" && <ConverterTab />}
+
+        {/* ── Downloader Tab ── */}
+        {activeTab === "downloader" && (
           <div style={{ width: "100%", maxWidth: "700px" }}>
 
             {/* Header */}
@@ -740,6 +782,7 @@ export default function App() {
               </p>
             </div>
           </div>
+        )}
         </div>
 
       {/* Duplicate Detection Modal */}

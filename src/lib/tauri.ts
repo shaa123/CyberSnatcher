@@ -43,3 +43,13 @@ export async function pickFolder(): Promise<string | null> {
     return null;
   }
 }
+
+export async function pickFile(filters?: { name: string; extensions: string[] }[]): Promise<string | null> {
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({ directory: false, multiple: false, filters });
+    return selected as string | null;
+  } catch {
+    return null;
+  }
+}
