@@ -10,7 +10,7 @@ export default function TitleBar() {
           <polygon points="16,2 30,10 30,22 16,30 2,22 2,10" fill="none" stroke="#b400ff" strokeWidth="1.5" />
           <circle cx="16" cy="16" r="3" fill="#00f5ff" />
         </svg>
-        <span data-tauri-drag-region style={{ fontFamily: "'Orbitron', sans-serif", fontSize: "17px", fontWeight: 700, letterSpacing: "2px", color: "#b400ff" }}>
+        <span data-tauri-drag-region style={{ fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px", fontWeight: 700, letterSpacing: "2px", color: "#b400ff" }}>
           CYBERSNATCHER
         </span>
       </div>

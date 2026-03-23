@@ -12,7 +12,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
       <p className="text-[17px] uppercase tracking-widest text-cyber-text-tertiary mb-1">
         {label}
       </p>
-      <p className="text-[17px] font-semibold text-cyber-text-primary font-mono">
+      <p className="text-[17px] font-semibold text-cyber-text-primary">
         {value}
       </p>
     </div>

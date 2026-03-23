@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+/* Google Fonts import removed — using system fonts */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -27,7 +27,7 @@ html, body, #root {
   height: 100%; width: 100%; overflow: hidden;
   background-color: var(--bg);
   color: var(--text);
-  font-family: 'Share Tech Mono', monospace;
+  font-family: system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -147,7 +147,7 @@ input:focus, textarea:focus {
 .corner-accents::after { top: -1px; right: -1px; border-top: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
 
 /* Terminal log */
-.terminal-log { font-family: 'Share Tech Mono', monospace; font-size: 17px; line-height: 1.6; }
+.terminal-log { font-family: system-ui, -apple-system, sans-serif; font-size: 17px; line-height: 1.6; }
 
 /* Progress bar */
 .cyber-progress-track {

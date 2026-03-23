@@ -36,7 +36,7 @@ export default function DownloadView({ item }: DownloadViewProps) {
           <span className="text-[17px] font-semibold px-1.5 py-0.5 rounded bg-cyber-primary/15 text-cyber-primary border border-cyber-primary/20">
             {item.site_name}
           </span>
-          <span className="text-[17px] text-cyber-text-tertiary font-mono truncate">
+          <span className="text-[17px] text-cyber-text-tertiary truncate">
             {item.url}
           </span>
         </div>
@@ -47,7 +47,7 @@ export default function DownloadView({ item }: DownloadViewProps) {
       <div className="mb-2">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[17px] text-cyber-text-secondary">Progress</span>
-          <span className="text-[17px] font-semibold font-mono text-cyber-primary">
+          <span className="text-[17px] font-semibold text-cyber-primary">
             {item.progress}%
           </span>
         </div>
@@ -93,7 +93,7 @@ export default function DownloadView({ item }: DownloadViewProps) {
               Retry
             </button>
             {failedError && (
-              <span className="flex items-center text-[17px] text-cyber-error font-mono">
+              <span className="flex items-center text-[17px] text-cyber-error">
                 {failedError}
               </span>
             )}

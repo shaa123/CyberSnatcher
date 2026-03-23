@@ -54,7 +54,7 @@ export default function DownloadQueue() {
                   </span>
                   <span className="text-[17px] text-cyber-text-tertiary">{item.site_name}</span>
                   {isActive && item.speed !== "—" && (
-                    <span className="text-[17px] text-cyber-text-secondary font-mono">{item.speed}</span>
+                    <span className="text-[17px] text-cyber-text-secondary">{item.speed}</span>
                   )}
                 </div>
               </div>
@@ -88,7 +88,7 @@ export default function DownloadQueue() {
                 <div className="flex-1">
                   <ProgressBar progress={item.progress} />
                 </div>
-                <span className="text-[17px] font-mono text-cyber-primary shrink-0">
+                <span className="text-[17px] text-cyber-primary shrink-0">
                   {Math.round(item.progress)}%
                 </span>
               </div>

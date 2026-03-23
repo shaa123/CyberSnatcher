@@ -39,7 +39,7 @@ export default function EmptyState() {
 
       {/* Keyboard hint */}
       <div className="flex items-center gap-1.5 mt-2">
-        <kbd className="px-1.5 py-0.5 text-[17px] font-mono bg-cyber-card border border-cyber-border rounded text-cyber-text-tertiary">
+        <kbd className="px-1.5 py-0.5 text-[17px] bg-cyber-card border border-cyber-border rounded text-cyber-text-tertiary">
           Ctrl+V
         </kbd>
         <span className="text-[17px] text-cyber-text-tertiary">

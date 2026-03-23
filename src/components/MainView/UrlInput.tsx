@@ -80,7 +80,7 @@ export default function UrlInput() {
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSnatch()}
           placeholder="Paste any URL..."
-          className="w-full bg-cyber-surface border border-cyber-border rounded-lg px-4 py-3 text-[17px] text-cyber-text-primary placeholder:text-cyber-text-tertiary font-mono transition-all hover:border-cyber-primary/30 focus:border-cyber-primary/50"
+          className="w-full bg-cyber-surface border border-cyber-border rounded-lg px-4 py-3 text-[17px] text-cyber-text-primary placeholder:text-cyber-text-tertiary transition-all hover:border-cyber-primary/30 focus:border-cyber-primary/50"
         />
         {badge && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[17px] font-semibold px-2 py-0.5 rounded bg-cyber-primary/15 text-cyber-primary border border-cyber-primary/20">

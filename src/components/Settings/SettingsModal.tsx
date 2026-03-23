@@ -47,7 +47,7 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
                   type="text"
                   value={folderInput}
                   onChange={(e) => setFolderInput(e.target.value)}
-                  className="flex-1 bg-cyber-bg border border-cyber-border rounded-lg px-3 py-2 text-[17px] text-cyber-text-primary font-mono"
+                  className="flex-1 bg-cyber-bg border border-cyber-border rounded-lg px-3 py-2 text-[17px] text-cyber-text-primary"
                 />
                 <button
                   onClick={() => setDownloadFolder(folderInput)}

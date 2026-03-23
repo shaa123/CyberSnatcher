@@ -392,7 +392,7 @@ export default function App() {
                   <circle cx="16" cy="16" r="3" fill="#00f5ff" />
                 </svg>
                 <h1 style={{
-                  fontFamily: "'Orbitron', sans-serif", fontSize: "17px", fontWeight: 900, margin: 0,
+                  fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px", fontWeight: 900, margin: 0,
                   background: "linear-gradient(135deg, #b400ff 0%, #e040fb 40%, #00f5ff 100%)",
                   WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
                   letterSpacing: "4px",
@@ -438,7 +438,7 @@ export default function App() {
                       width: "100%", background: "var(--input-bg)",
                       border: `1px solid ${phase === "error" ? "var(--red)" : "var(--border-purple)"}`,
                       borderRadius: "3px", padding: `14px ${platform ? "14px" : "14px"} 10px ${platform ? "30px" : "14px"}`,
-                      color: "var(--text)", fontFamily: "'Share Tech Mono', monospace", fontSize: "17px",
+                      color: "var(--text)", fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px",
                       transition: "border-color 0.2s, box-shadow 0.2s",
                     }}
                   />
@@ -449,7 +449,7 @@ export default function App() {
                   style={{
                     background: "linear-gradient(135deg, #b400ff22, #7700cc22)",
                     border: "1px solid #b400ff", borderRadius: "3px", color: "#e040fb",
-                    fontFamily: "'Orbitron', sans-serif", fontSize: "17px", fontWeight: 700,
+                    fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px", fontWeight: 700,
                     letterSpacing: "2px", padding: "0 24px", cursor: "pointer",
                     whiteSpace: "nowrap", opacity: (phase === "fetching" || phase === "downloading") ? 0.5 : 1,
                   }}
@@ -499,7 +499,7 @@ export default function App() {
                         borderRadius: "3px", cursor: "pointer", transition: "all 0.2s",
                       }}>
                         <div style={{ fontSize: "17px", marginBottom: "2px" }}>{p.icon}</div>
-                        <div style={{ fontSize: "17px", color: "#e040fb", letterSpacing: "1px", fontFamily: "'Orbitron', sans-serif", fontWeight: 700 }}>{p.label}</div>
+                        <div style={{ fontSize: "17px", color: "#e040fb", letterSpacing: "1px", fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700 }}>{p.label}</div>
                         <div style={{ fontSize: "17px", color: "var(--text-dimmer)", marginTop: "2px" }}>{p.desc}</div>
                       </button>
                     ))}
@@ -523,7 +523,7 @@ export default function App() {
                     background: format === f ? "#b400ff22" : "transparent",
                     border: `1px solid ${format === f ? "#b400ff" : "var(--border-dim)"}`,
                     borderRadius: "3px", color: format === f ? "#e040fb" : "var(--text-dim)",
-                    fontFamily: "'Share Tech Mono', monospace", fontSize: "17px",
+                    fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px",
                     padding: "8px 18px", cursor: "pointer", transition: "all 0.2s",
                     boxShadow: format === f ? "0 0 10px #b400ff30" : "none", letterSpacing: "1px",
                   }}>{f}</button>
@@ -537,7 +537,7 @@ export default function App() {
                     <label style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--purple)" }}>
                       ▸ QUALITY
                     </label>
-                    <span style={{ fontSize: "17px", color: "#00f5ff", fontWeight: 700, letterSpacing: "1px", fontFamily: "'Share Tech Mono', monospace" }}>
+                    <span style={{ fontSize: "17px", color: "#00f5ff", fontWeight: 700, letterSpacing: "1px", fontFamily: "system-ui, -apple-system, sans-serif" }}>
                       {QUALITIES[qualityIdx]}
                     </span>
                   </div>
@@ -619,7 +619,7 @@ export default function App() {
                     background: phase === "done" ? "linear-gradient(135deg, #00f5ff22, #00f5ff11)" : "linear-gradient(135deg, #b400ff33, #7700cc22)",
                     border: `1px solid ${phase === "done" ? "#00f5ff" : "#b400ff"}`,
                     borderRadius: "3px", color: phase === "done" ? "#00f5ff" : "#e040fb",
-                    fontFamily: "'Orbitron', sans-serif", fontWeight: 700, fontSize: "17px", letterSpacing: "3px",
+                    fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, fontSize: "17px", letterSpacing: "3px",
                     cursor: (phase === "ready" || phase === "done") ? "pointer" : "not-allowed",
                     opacity: (phase === "idle" || phase === "fetching" || phase === "downloading") ? 0.5 : 1,
                     animation: phase === "ready" ? "pulse-cyan 2s infinite" : "none",
@@ -636,7 +636,7 @@ export default function App() {
                 {phase === "downloading" && (
                   <button onClick={handleCancel} style={{
                     padding: "16px 24px", background: "#ff003c22", border: "1px solid #ff003c66",
-                    borderRadius: "3px", color: "#ff003c", fontFamily: "'Orbitron', sans-serif",
+                    borderRadius: "3px", color: "#ff003c", fontFamily: "system-ui, -apple-system, sans-serif",
                     fontWeight: 700, fontSize: "17px", letterSpacing: "2px", cursor: "pointer",
                   }}>ABORT</button>
                 )}
@@ -648,12 +648,12 @@ export default function App() {
                   <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
                     <button onClick={() => openFile(filePath)} style={{
                       padding: "10px 18px", background: "#00f5ff11", border: "1px solid #00f5ff44",
-                      borderRadius: "3px", color: "#00f5ff", fontFamily: "'Share Tech Mono', monospace",
+                      borderRadius: "3px", color: "#00f5ff", fontFamily: "system-ui, -apple-system, sans-serif",
                       fontSize: "17px", cursor: "pointer", letterSpacing: "1px", transition: "all 0.2s",
                     }}>▶ OPEN FILE</button>
                     <button onClick={() => showInFolder(filePath)} style={{
                       padding: "10px 18px", background: "#b400ff11", border: "1px solid #b400ff44",
-                      borderRadius: "3px", color: "#e040fb", fontFamily: "'Share Tech Mono', monospace",
+                      borderRadius: "3px", color: "#e040fb", fontFamily: "system-ui, -apple-system, sans-serif",
                       fontSize: "17px", cursor: "pointer", letterSpacing: "1px", transition: "all 0.2s",
                     }}>◈ SHOW IN FOLDER</button>
                     {fileSize && (
@@ -674,7 +674,7 @@ export default function App() {
                       ]).map(({ label, preset }) => (
                         <button key={label} onClick={() => handleConvert(preset)} style={{
                           padding: "5px 10px", background: "transparent", border: "1px solid var(--border-dim)",
-                          borderRadius: "2px", color: "var(--text-dim)", fontFamily: "'Share Tech Mono', monospace",
+                          borderRadius: "2px", color: "var(--text-dim)", fontFamily: "system-ui, -apple-system, sans-serif",
                           fontSize: "17px", cursor: "pointer", transition: "all 0.2s", letterSpacing: "1px",
                         }}>{label}</button>
                       ))}
@@ -686,7 +686,7 @@ export default function App() {
                       ]).map(({ label, preset }) => (
                         <button key={label} onClick={() => handleConvert(preset)} style={{
                           padding: "5px 10px", background: "transparent", border: "1px solid #00f5ff33",
-                          borderRadius: "2px", color: "#00f5ff88", fontFamily: "'Share Tech Mono', monospace",
+                          borderRadius: "2px", color: "#00f5ff88", fontFamily: "system-ui, -apple-system, sans-serif",
                           fontSize: "17px", cursor: "pointer", transition: "all 0.2s", letterSpacing: "1px",
                         }}>{label}</button>
                       ))}
@@ -753,7 +753,7 @@ export default function App() {
             background: "var(--panel)", border: "1px solid #fbbf24", borderRadius: "4px",
             padding: "24px 28px", maxWidth: "420px", width: "90%",
           }}>
-            <div style={{ fontSize: "17px", color: "#fbbf24", letterSpacing: "2px", fontFamily: "'Orbitron', sans-serif", fontWeight: 700, marginBottom: "12px" }}>
+            <div style={{ fontSize: "17px", color: "#fbbf24", letterSpacing: "2px", fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, marginBottom: "12px" }}>
               DUPLICATE DETECTED
             </div>
             <p style={{ fontSize: "17px", color: "var(--text-dim)", marginBottom: "6px", lineHeight: 1.5 }}>
@@ -766,12 +766,12 @@ export default function App() {
             <div style={{ display: "flex", gap: "8px" }}>
               <button onClick={() => setDuplicateUrl(null)} style={{
                 flex: 1, padding: "10px", background: "transparent", border: "1px solid var(--border-dim)",
-                borderRadius: "3px", color: "var(--text-dim)", fontFamily: "'Orbitron', sans-serif",
+                borderRadius: "3px", color: "var(--text-dim)", fontFamily: "system-ui, -apple-system, sans-serif",
                 fontSize: "17px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer",
               }}>CANCEL</button>
               <button onClick={() => forceProbeDuplicate()} style={{
                 flex: 1, padding: "10px", background: "#fbbf2422", border: "1px solid #fbbf24",
-                borderRadius: "3px", color: "#fbbf24", fontFamily: "'Orbitron', sans-serif",
+                borderRadius: "3px", color: "#fbbf24", fontFamily: "system-ui, -apple-system, sans-serif",
                 fontSize: "17px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer",
               }}>DOWNLOAD ANYWAY</button>
             </div>
