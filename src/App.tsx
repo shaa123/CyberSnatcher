@@ -395,11 +395,11 @@ export default function App() {
                   fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px", fontWeight: 900, margin: 0,
                   background: "linear-gradient(135deg, #b400ff 0%, #e040fb 40%, #00f5ff 100%)",
                   WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                  letterSpacing: "4px",
+                  ,
                   animation: glitching ? "glitch 0.3s steps(2) both" : "flicker 8s infinite",
                 }}>CYBERSNATCHER</h1>
               </div>
-              <p style={{ color: "var(--text-dim)", fontSize: "17px", letterSpacing: "3px" }}>
+              <p style={{ color: "var(--text-dim)", fontSize: "17px" }}>
                 NEURAL VIDEO EXTRACTION SYSTEM v2.7
               </p>
             </div>
@@ -415,7 +415,7 @@ export default function App() {
               <div style={{ position: "absolute", bottom: "-1px", right: "-1px", width: "14px", height: "14px", borderBottom: "2px solid var(--cyan)", borderRight: "2px solid var(--cyan)" }} />
 
               {/* URL Input */}
-              <label style={{ display: "block", fontSize: "17px", letterSpacing: "3px", color: "var(--purple)", marginBottom: "8px" }}>
+              <label style={{ display: "block", fontSize: "17px", color: "var(--purple)", marginBottom: "8px" }}>
                 ▸ TARGET URL
               </label>
               <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
@@ -450,7 +450,7 @@ export default function App() {
                     background: "linear-gradient(135deg, #b400ff22, #7700cc22)",
                     border: "1px solid #b400ff", borderRadius: "3px", color: "#e040fb",
                     fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px", fontWeight: 700,
-                    letterSpacing: "2px", padding: "0 24px", cursor: "pointer",
+                    padding: "0 24px", cursor: "pointer",
                     whiteSpace: "nowrap", opacity: (phase === "fetching" || phase === "downloading") ? 0.5 : 1,
                   }}
                 >
@@ -460,7 +460,7 @@ export default function App() {
 
               {/* Options row: clipboard + subs */}
               <div style={{ display: "flex", gap: "16px", marginBottom: "14px", alignItems: "center" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "17px", color: clipboardWatch ? "#00f5ff" : "var(--text-dim)", letterSpacing: "1px", userSelect: "none" }}
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "17px", color: clipboardWatch ? "#00f5ff" : "var(--text-dim)", userSelect: "none" }}
                   onClick={() => setClipboardWatch(!clipboardWatch)}>
                   <span style={{
                     width: "14px", height: "14px", border: `1px solid ${clipboardWatch ? "#00f5ff" : "var(--border-dim)"}`,
@@ -469,7 +469,7 @@ export default function App() {
                   }}>{clipboardWatch ? "✓" : ""}</span>
                   CLIPBOARD MONITOR
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "17px", color: writeSubs ? "#e040fb" : "var(--text-dim)", letterSpacing: "1px", userSelect: "none" }}
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "17px", color: writeSubs ? "#e040fb" : "var(--text-dim)", userSelect: "none" }}
                   onClick={() => setWriteSubs(!writeSubs)}>
                   <span style={{
                     width: "14px", height: "14px", border: `1px solid ${writeSubs ? "#e040fb" : "var(--border-dim)"}`,
@@ -484,8 +484,8 @@ export default function App() {
               {smartMode && phase !== "downloading" && (
                 <div style={{ marginBottom: "14px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <label style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--purple)" }}>▸ SMART MODE</label>
-                    <span style={{ fontSize: "17px", color: "var(--text-dimmer)", letterSpacing: "1px", cursor: "pointer" }}
+                    <label style={{ fontSize: "17px", color: "var(--purple)" }}>▸ SMART MODE</label>
+                    <span style={{ fontSize: "17px", color: "var(--text-dimmer)", cursor: "pointer" }}
                       onClick={() => setSmartMode(false)}>HIDE</span>
                   </div>
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -499,7 +499,7 @@ export default function App() {
                         borderRadius: "3px", cursor: "pointer", transition: "all 0.2s",
                       }}>
                         <div style={{ fontSize: "17px", marginBottom: "2px" }}>{p.icon}</div>
-                        <div style={{ fontSize: "17px", color: "#e040fb", letterSpacing: "1px", fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700 }}>{p.label}</div>
+                        <div style={{ fontSize: "17px", color: "#e040fb", fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700 }}>{p.label}</div>
                         <div style={{ fontSize: "17px", color: "var(--text-dimmer)", marginTop: "2px" }}>{p.desc}</div>
                       </button>
                     ))}
@@ -508,13 +508,13 @@ export default function App() {
               )}
               {!smartMode && phase !== "downloading" && (
                 <div style={{ marginBottom: "8px", textAlign: "right" }}>
-                  <span style={{ fontSize: "17px", color: "var(--text-dimmer)", letterSpacing: "1px", cursor: "pointer" }}
+                  <span style={{ fontSize: "17px", color: "var(--text-dimmer)", cursor: "pointer" }}
                     onClick={() => setSmartMode(true)}>SHOW SMART MODE</span>
                 </div>
               )}
 
               {/* Format selector */}
-              <label style={{ display: "block", fontSize: "17px", letterSpacing: "3px", color: "var(--purple)", marginBottom: "8px" }}>
+              <label style={{ display: "block", fontSize: "17px", color: "var(--purple)", marginBottom: "8px" }}>
                 ▸ OUTPUT FORMAT
               </label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
@@ -525,7 +525,7 @@ export default function App() {
                     borderRadius: "3px", color: format === f ? "#e040fb" : "var(--text-dim)",
                     fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px",
                     padding: "8px 18px", cursor: "pointer", transition: "all 0.2s",
-                    boxShadow: format === f ? "0 0 10px #b400ff30" : "none", letterSpacing: "1px",
+                    boxShadow: format === f ? "0 0 10px #b400ff30" : "none",
                   }}>{f}</button>
                 ))}
               </div>
@@ -534,10 +534,10 @@ export default function App() {
               {format !== "Default" && format !== "MP3 Audio" && (
                 <div style={{ marginBottom: "18px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                    <label style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--purple)" }}>
+                    <label style={{ fontSize: "17px", color: "var(--purple)" }}>
                       ▸ QUALITY
                     </label>
-                    <span style={{ fontSize: "17px", color: "#00f5ff", fontWeight: 700, letterSpacing: "1px", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+                    <span style={{ fontSize: "17px", color: "#00f5ff", fontWeight: 700, fontFamily: "system-ui, -apple-system, sans-serif" }}>
                       {QUALITIES[qualityIdx]}
                     </span>
                   </div>
@@ -558,7 +558,7 @@ export default function App() {
                       {QUALITIES.map((q, i) => (
                         <span key={q} style={{
                           fontSize: "17px", color: i === qualityIdx ? "#00f5ff" : "var(--text-dimmer)",
-                          letterSpacing: "0.5px", transition: "color 0.2s",
+                          transition: "color 0.2s",
                           cursor: "pointer", userSelect: "none",
                         }} onClick={() => setQualityIdx(i)}>{q}</span>
                       ))}
@@ -585,10 +585,10 @@ export default function App() {
                     <div style={{ fontSize: "17px", color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{videoTitle}</div>
                     <div style={{ display: "flex", gap: "12px", marginTop: "3px" }}>
                       <span style={{ fontSize: "17px", color: "var(--text-dim)" }}>⏱ {videoDuration}</span>
-                      <span style={{ fontSize: "17px", color: videoPlatformColor, letterSpacing: "1px" }}>◈ {videoPlatform}</span>
+                      <span style={{ fontSize: "17px", color: videoPlatformColor }}>◈ {videoPlatform}</span>
                     </div>
                   </div>
-                  <span style={{ fontSize: "17px", color: "#00f5ff", letterSpacing: "2px", border: "1px solid #00f5ff44", padding: "4px 12px", borderRadius: "3px" }}>LOCKED</span>
+                  <span style={{ fontSize: "17px", color: "#00f5ff", border: "1px solid #00f5ff44", padding: "4px 12px", borderRadius: "3px" }}>LOCKED</span>
                 </div>
               )}
 
@@ -596,7 +596,7 @@ export default function App() {
               {(phase === "downloading" || phase === "done") && (
                 <div className="anim-float-in" style={{ marginBottom: "16px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
-                    <span style={{ fontSize: "17px", color: "#00f5ff", letterSpacing: "2px" }}>
+                    <span style={{ fontSize: "17px", color: "#00f5ff" }}>
                       {phase === "done" ? "COMPLETE" : "EXTRACTING"}
                       {speed && phase === "downloading" ? ` · ${speed}` : ""}
                       {eta && phase === "downloading" ? ` · ETA ${eta}` : ""}
@@ -619,7 +619,7 @@ export default function App() {
                     background: phase === "done" ? "linear-gradient(135deg, #00f5ff22, #00f5ff11)" : "linear-gradient(135deg, #b400ff33, #7700cc22)",
                     border: `1px solid ${phase === "done" ? "#00f5ff" : "#b400ff"}`,
                     borderRadius: "3px", color: phase === "done" ? "#00f5ff" : "#e040fb",
-                    fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, fontSize: "17px", letterSpacing: "3px",
+                    fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, fontSize: "17px",
                     cursor: (phase === "ready" || phase === "done") ? "pointer" : "not-allowed",
                     opacity: (phase === "idle" || phase === "fetching" || phase === "downloading") ? 0.5 : 1,
                     animation: phase === "ready" ? "pulse-cyan 2s infinite" : "none",
@@ -637,7 +637,7 @@ export default function App() {
                   <button onClick={handleCancel} style={{
                     padding: "16px 24px", background: "#ff003c22", border: "1px solid #ff003c66",
                     borderRadius: "3px", color: "#ff003c", fontFamily: "system-ui, -apple-system, sans-serif",
-                    fontWeight: 700, fontSize: "17px", letterSpacing: "2px", cursor: "pointer",
+                    fontWeight: 700, fontSize: "17px", cursor: "pointer",
                   }}>ABORT</button>
                 )}
               </div>
@@ -649,22 +649,22 @@ export default function App() {
                     <button onClick={() => openFile(filePath)} style={{
                       padding: "10px 18px", background: "#00f5ff11", border: "1px solid #00f5ff44",
                       borderRadius: "3px", color: "#00f5ff", fontFamily: "system-ui, -apple-system, sans-serif",
-                      fontSize: "17px", cursor: "pointer", letterSpacing: "1px", transition: "all 0.2s",
+                      fontSize: "17px", cursor: "pointer", transition: "all 0.2s",
                     }}>▶ OPEN FILE</button>
                     <button onClick={() => showInFolder(filePath)} style={{
                       padding: "10px 18px", background: "#b400ff11", border: "1px solid #b400ff44",
                       borderRadius: "3px", color: "#e040fb", fontFamily: "system-ui, -apple-system, sans-serif",
-                      fontSize: "17px", cursor: "pointer", letterSpacing: "1px", transition: "all 0.2s",
+                      fontSize: "17px", cursor: "pointer", transition: "all 0.2s",
                     }}>◈ SHOW IN FOLDER</button>
                     {fileSize && (
-                      <span style={{ fontSize: "17px", color: "var(--text-dim)", marginLeft: "auto", letterSpacing: "1px" }}>
+                      <span style={{ fontSize: "17px", color: "var(--text-dim)", marginLeft: "auto" }}>
                         {fileSize > 1073741824 ? `${(fileSize / 1073741824).toFixed(2)} GB` : `${(fileSize / 1048576).toFixed(1)} MB`}
                       </span>
                     )}
                   </div>
                   {ffmpegOk && (
                     <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "17px", color: "var(--text-dim)", letterSpacing: "2px", alignSelf: "center", marginRight: "4px" }}>CONVERT:</span>
+                      <span style={{ fontSize: "17px", color: "var(--text-dim)", alignSelf: "center", marginRight: "4px" }}>CONVERT:</span>
                       {([
                         { label: "MP4", preset: { type: "ToMp4" } as ConversionPreset },
                         { label: "MKV", preset: { type: "ToMkv" } as ConversionPreset },
@@ -675,10 +675,10 @@ export default function App() {
                         <button key={label} onClick={() => handleConvert(preset)} style={{
                           padding: "5px 10px", background: "transparent", border: "1px solid var(--border-dim)",
                           borderRadius: "2px", color: "var(--text-dim)", fontFamily: "system-ui, -apple-system, sans-serif",
-                          fontSize: "17px", cursor: "pointer", transition: "all 0.2s", letterSpacing: "1px",
+                          fontSize: "17px", cursor: "pointer", transition: "all 0.2s",
                         }}>{label}</button>
                       ))}
-                      <span style={{ fontSize: "17px", color: "var(--text-dim)", letterSpacing: "2px", alignSelf: "center", margin: "0 4px" }}>AUDIO:</span>
+                      <span style={{ fontSize: "17px", color: "var(--text-dim)", alignSelf: "center", margin: "0 4px" }}>AUDIO:</span>
                       {([
                         { label: "MP3", preset: { type: "ToMp3", bitrate: 320 } as ConversionPreset },
                         { label: "FLAC", preset: { type: "ToFlac" } as ConversionPreset },
@@ -687,7 +687,7 @@ export default function App() {
                         <button key={label} onClick={() => handleConvert(preset)} style={{
                           padding: "5px 10px", background: "transparent", border: "1px solid #00f5ff33",
                           borderRadius: "2px", color: "#00f5ff88", fontFamily: "system-ui, -apple-system, sans-serif",
-                          fontSize: "17px", cursor: "pointer", transition: "all 0.2s", letterSpacing: "1px",
+                          fontSize: "17px", cursor: "pointer", transition: "all 0.2s",
                         }}>{label}</button>
                       ))}
                     </div>
@@ -697,7 +697,7 @@ export default function App() {
               {converting && (
                 <div className="anim-float-in" style={{ marginTop: "10px", padding: "12px", background: "var(--input-bg)", border: "1px solid #b400ff44", borderRadius: "3px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-                    <span style={{ fontSize: "17px", color: "#b400ff", letterSpacing: "2px" }}>CONVERTING...</span>
+                    <span style={{ fontSize: "17px", color: "#b400ff" }}>CONVERTING...</span>
                     <span style={{ fontSize: "17px", color: "#b400ff", fontWeight: 700 }}>{Math.round(progress)}%</span>
                   </div>
                   <div className="cyber-progress-track">
@@ -714,7 +714,7 @@ export default function App() {
                 background: "linear-gradient(145deg, var(--panel), var(--panel-alt))",
                 border: "1px solid #3a2a5555", borderRadius: "4px", padding: "18px 20px",
               }}>
-                <div style={{ fontSize: "17px", letterSpacing: "3px", color: "var(--text-dim)", marginBottom: "12px" }}>▸ EXTRACTION HISTORY</div>
+                <div style={{ fontSize: "17px", color: "var(--text-dim)", marginBottom: "12px" }}>▸ EXTRACTION HISTORY</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                   {history.map((h, i) => (
                     <div key={i} style={{
@@ -727,7 +727,7 @@ export default function App() {
                         <div style={{ fontSize: "17px", color: "#c084fc", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.title}</div>
                         <div style={{ fontSize: "17px", color: "var(--text-dimmer)", marginTop: "2px" }}>{h.quality} · {h.site_name}</div>
                       </div>
-                      <span style={{ fontSize: "17px", color: "#00f5ff", letterSpacing: "1px", flexShrink: 0 }}>✓ DONE</span>
+                      <span style={{ fontSize: "17px", color: "#00f5ff", flexShrink: 0 }}>✓ DONE</span>
                     </div>
                   ))}
                 </div>
@@ -736,7 +736,7 @@ export default function App() {
 
             {/* Footer */}
             <div style={{ textAlign: "center", marginTop: "20px" }}>
-              <p style={{ fontSize: "17px", color: "#2a1e3a", letterSpacing: "2px" }}>
+              <p style={{ fontSize: "17px", color: "#2a1e3a" }}>
                 CYBERSNATCHER · POWERED BY yt-dlp + ffmpeg · TAURI 2.x
               </p>
             </div>
@@ -753,7 +753,7 @@ export default function App() {
             background: "var(--panel)", border: "1px solid #fbbf24", borderRadius: "4px",
             padding: "24px 28px", maxWidth: "420px", width: "90%",
           }}>
-            <div style={{ fontSize: "17px", color: "#fbbf24", letterSpacing: "2px", fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, marginBottom: "12px" }}>
+            <div style={{ fontSize: "17px", color: "#fbbf24", fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, marginBottom: "12px" }}>
               DUPLICATE DETECTED
             </div>
             <p style={{ fontSize: "17px", color: "var(--text-dim)", marginBottom: "6px", lineHeight: 1.5 }}>
@@ -767,12 +767,12 @@ export default function App() {
               <button onClick={() => setDuplicateUrl(null)} style={{
                 flex: 1, padding: "10px", background: "transparent", border: "1px solid var(--border-dim)",
                 borderRadius: "3px", color: "var(--text-dim)", fontFamily: "system-ui, -apple-system, sans-serif",
-                fontSize: "17px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer",
+                fontSize: "17px", fontWeight: 700, cursor: "pointer",
               }}>CANCEL</button>
               <button onClick={() => forceProbeDuplicate()} style={{
                 flex: 1, padding: "10px", background: "#fbbf2422", border: "1px solid #fbbf24",
                 borderRadius: "3px", color: "#fbbf24", fontFamily: "system-ui, -apple-system, sans-serif",
-                fontSize: "17px", fontWeight: 700, letterSpacing: "2px", cursor: "pointer",
+                fontSize: "17px", fontWeight: 700, cursor: "pointer",
               }}>DOWNLOAD ANYWAY</button>
             </div>
           </div>

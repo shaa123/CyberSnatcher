@@ -9,7 +9,7 @@ interface StatsGridProps {
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-cyber-bg border border-cyber-border rounded-lg p-3">
-      <p className="text-[17px] uppercase tracking-widest text-cyber-text-tertiary mb-1">
+      <p className="text-[17px] uppercase text-cyber-text-tertiary mb-1">
         {label}
       </p>
       <p className="text-[17px] font-semibold text-cyber-text-primary">

@@ -26,13 +26,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["'Segoe UI'", "'Inter'", "system-ui", "sans-serif"],
-        mono: [
-          "'Cascadia Code'",
-          "'JetBrains Mono'",
-          "'Fira Code'",
-          "monospace",
-        ],
+        sans: ["system-ui", "-apple-system", "sans-serif"],
+        mono: ["system-ui", "-apple-system", "sans-serif"],
       },
       boxShadow: {
         "cyber-glow":
