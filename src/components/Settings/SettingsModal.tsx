@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useDownloadStore } from "../../stores/downloadStore";
+import GeneralTab from "./GeneralTab";
+import SupportedSitesTab from "./SupportedSitesTab";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -11,11 +13,12 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
   const setDownloadFolder = useDownloadStore((s) => s.setDownloadFolder);
 
   const [folderInput, setFolderInput] = useState(downloadFolder);
+  const [activeTab, setActiveTab] = useState<"general" | "sites">("general");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-cyber-surface border border-cyber-border rounded-xl w-[520px] max-h-[80vh] overflow-hidden shadow-2xl flex flex-col">
+      <div className="relative bg-cyber-surface border border-cyber-border rounded-xl w-[560px] max-h-[80vh] overflow-hidden shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-cyber-border shrink-0">
           <h2 className="text-[17px] font-bold text-cyber-text-primary">Settings</h2>
@@ -26,50 +29,42 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
           </button>
         </div>
 
+        {/* Tabs */}
+        <div className="flex border-b border-cyber-border shrink-0">
+          <button
+            onClick={() => setActiveTab("general")}
+            className={`px-4 py-2.5 text-[15px] font-medium transition-colors ${
+              activeTab === "general"
+                ? "text-cyber-primary border-b-2 border-cyber-primary"
+                : "text-cyber-text-tertiary hover:text-cyber-text-secondary"
+            }`}
+          >
+            General
+          </button>
+          <button
+            onClick={() => setActiveTab("sites")}
+            className={`px-4 py-2.5 text-[15px] font-medium transition-colors ${
+              activeTab === "sites"
+                ? "text-cyber-primary border-b-2 border-cyber-primary"
+                : "text-cyber-text-tertiary hover:text-cyber-text-secondary"
+            }`}
+          >
+            Supported Sites
+          </button>
+        </div>
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
-          <div className="space-y-4">
-            {/* yt-dlp status */}
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-cyber-bg border border-cyber-border">
-              <div className={`w-2 h-2 rounded-full ${ytdlpInstalled ? "bg-cyber-success" : "bg-cyber-error"}`} />
-              <span className="text-[17px] text-cyber-text-secondary">
-                yt-dlp: {ytdlpInstalled ? "Installed" : "Not found — install from https://github.com/yt-dlp/yt-dlp"}
-              </span>
-            </div>
-
-            {/* Download folder */}
-            <div>
-              <label className="block text-[17px] font-semibold text-cyber-text-secondary mb-1.5">
-                Default Download Folder
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={folderInput}
-                  onChange={(e) => setFolderInput(e.target.value)}
-                  className="flex-1 bg-cyber-bg border border-cyber-border rounded-lg px-3 py-2 text-[17px] text-cyber-text-primary"
-                />
-                <button
-                  onClick={() => setDownloadFolder(folderInput)}
-                  className="px-3 py-2 bg-cyber-primary/10 border border-cyber-primary/30 rounded-lg text-[17px] text-cyber-primary hover:bg-cyber-primary/20 transition-all"
-                >
-                  Set
-                </button>
-              </div>
-              <p className="text-[17px] text-cyber-text-tertiary mt-1">
-                Tip: You can also click folders in the sidebar to set as download target
-              </p>
-            </div>
-
-            {/* Info */}
-            <div className="p-3 rounded-lg bg-cyber-bg border border-cyber-border space-y-1">
-              <p className="text-[17px] text-cyber-text-secondary font-semibold">How it works</p>
-              <p className="text-[17px] text-cyber-text-tertiary leading-relaxed">
-                CyberSnatcher uses yt-dlp under the hood to download videos. Make sure yt-dlp is installed and in your PATH.
-                Paste any URL from YouTube, Twitter/X, TikTok, Instagram, Reddit, or direct video links.
-              </p>
-            </div>
-          </div>
+          {activeTab === "general" ? (
+            <GeneralTab
+              ytdlpInstalled={ytdlpInstalled}
+              folderInput={folderInput}
+              setFolderInput={setFolderInput}
+              onSaveFolder={() => setDownloadFolder(folderInput)}
+            />
+          ) : (
+            <SupportedSitesTab />
+          )}
         </div>
 
         {/* Footer */}
