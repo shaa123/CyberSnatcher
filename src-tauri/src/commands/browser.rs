@@ -40,15 +40,23 @@ fn stream_detection_script() -> String {
 
         const seen = new Set();
 
-        function notifyStream(url, streamType) {
-            if (!url || seen.has(url)) return;
-            seen.add(url);
+        function getPageTitle() {
+            try { var og = document.querySelector('meta[property="og:title"]');
+                  if (og && og.getAttribute('content')) return og.getAttribute('content').trim(); } catch(e) {}
+            try { var tw = document.querySelector('meta[name="twitter:title"]');
+                  if (tw && tw.getAttribute('content')) return tw.getAttribute('content').trim(); } catch(e) {}
+            try { var h1 = document.querySelector('h1');
+                  if (h1 && h1.textContent && h1.textContent.trim()) return h1.textContent.trim(); } catch(e) {}
+            return document.title || '';
+        }
 
+        function sendStreamEvent(url, streamType) {
+            var title = getPageTitle();
             var payload = JSON.stringify({
                 manifest_url: url,
                 stream_type: streamType,
                 page_url: window.location.href,
-                page_title: document.title || ''
+                page_title: title
             });
 
             // Try all available IPC methods
@@ -58,7 +66,7 @@ fn stream_detection_script() -> String {
                         manifestUrl: url,
                         streamType: streamType,
                         pageUrl: window.location.href,
-                        pageTitle: document.title || ''
+                        pageTitle: title
                     }).catch(function() {});
                     return;
                 }
@@ -79,16 +87,53 @@ fn stream_detection_script() -> String {
             } catch(e) {}
         }
 
+        function notifyStream(url, streamType) {
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+            sendStreamEvent(url, streamType);
+        }
+
+        // Save original fetch before hooking — used by checkUrl for m3u8 classification
+        var origFetch = window.fetch;
+
         function checkUrl(url) {
             if (!url || typeof url !== 'string') return;
+            if (seen.has(url)) return;
             try {
-                var lower = url.toLowerCase().split('?')[0].split('#')[0];
+                var lower = url.toLowerCase();
+                var isM3u8 = lower.includes('.m3u8');
+                var isMpd = lower.includes('.mpd');
 
-                if (lower.endsWith('.m3u8') || lower.includes('.m3u8?') ||
-                    lower.includes('.m3u8/') || url.toLowerCase().includes('.m3u8')) {
+                if (isM3u8 && origFetch) {
+                    // Mark as seen immediately to prevent duplicate processing
+                    seen.add(url);
+                    // Fetch playlist content to classify master vs media
+                    origFetch(url).then(function(r) { return r.text(); }).then(function(text) {
+                        if (text.indexOf('#EXT-X-STREAM-INF') !== -1) {
+                            // Master playlist — extract variant URLs and suppress them
+                            var lines = text.split('\n');
+                            for (var i = 0; i < lines.length; i++) {
+                                var line = lines[i].trim();
+                                if (line && !line.startsWith('#')) {
+                                    try {
+                                        var variantUrl = new URL(line, url).href;
+                                        seen.add(variantUrl);
+                                    } catch(e2) {}
+                                }
+                            }
+                            sendStreamEvent(url, 'hls');
+                        } else if (text.indexOf('#EXTINF') !== -1 || text.indexOf('#EXTM3U') !== -1) {
+                            // Media playlist (standalone, not a variant of a known master)
+                            sendStreamEvent(url, 'hls');
+                        }
+                    }).catch(function() {
+                        // Fetch failed — notify anyway, backend will validate
+                        sendStreamEvent(url, 'hls');
+                    });
+                } else if (isM3u8) {
+                    // No fetch available, fall back to direct notify
                     notifyStream(url, 'hls');
-                } else if (lower.endsWith('.mpd') || lower.includes('.mpd?') ||
-                           lower.includes('.mpd/') || url.toLowerCase().includes('.mpd')) {
+                } else if (isMpd) {
                     notifyStream(url, 'dash');
                 }
             } catch(e) {}
@@ -98,7 +143,7 @@ fn stream_detection_script() -> String {
             if (!ct || !url) return;
             ct = ct.toLowerCase();
             if (ct.includes('mpegurl') || ct.includes('x-mpegurl')) {
-                notifyStream(url, 'hls');
+                checkUrl(url);
             } else if (ct.includes('dash+xml')) {
                 notifyStream(url, 'dash');
             }
@@ -106,7 +151,6 @@ fn stream_detection_script() -> String {
 
         // 1. Intercept fetch()
         if (window.fetch) {
-            var origFetch = window.fetch;
             window.fetch = function() {
                 var input = arguments[0];
                 var url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
