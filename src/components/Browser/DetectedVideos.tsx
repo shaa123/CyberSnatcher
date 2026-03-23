@@ -1,8 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useBrowserStore } from "../../stores/browserStore";
 import { useDownloadStore } from "../../stores/downloadStore";
 import { startBrowserDownload } from "../../lib/tauri";
-import type { DetectedStream } from "../../lib/types";
+import { listen } from "@tauri-apps/api/event";
+import type { DetectedStream, DownloadProgress } from "../../lib/types";
 import { downloadDir } from "@tauri-apps/api/path";
 
 function formatDuration(seconds: number | null): string {
@@ -18,23 +19,88 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
+interface DownloadState {
+  jobId: string;
+  percent: number;
+  speed: string;
+  status: "downloading" | "converting" | "complete" | "error";
+  filePath?: string;
+}
+
 export default function DetectedVideos() {
   const streams = useBrowserStore((s) => s.detectedStreams);
   const clearStreams = useBrowserStore((s) => s.clearDetectedStreams);
   const removeStream = useBrowserStore((s) => s.removeDetectedStream);
-  const setActiveTab = useBrowserStore((s) => s.setActiveTab);
   const downloadFolder = useDownloadStore((s) => s.downloadFolder);
-  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+
+  // Track download progress per stream (by stream id)
+  const [downloads, setDownloads] = useState<Record<string, DownloadState>>({});
+  // Map jobId -> streamId for progress routing
+  const [jobToStream, setJobToStream] = useState<Record<string, string>>({});
+
+  // Listen for browser download progress events
+  useEffect(() => {
+    const unlisten = listen<DownloadProgress>("download-progress", (event) => {
+      const p = event.payload;
+      if (!p.job_id.startsWith("browser-")) return;
+
+      // Find which stream this job belongs to
+      setJobToStream((mapping) => {
+        const streamId = mapping[p.job_id];
+        if (!streamId) return mapping;
+
+        setDownloads((prev) => {
+          const current = prev[streamId];
+          if (!current) return prev;
+
+          if (p.status === "complete") {
+            return {
+              ...prev,
+              [streamId]: { ...current, percent: 100, status: "complete", speed: "", filePath: p.file_path || undefined },
+            };
+          } else if (p.status === "error" || p.status === "cancelled") {
+            return {
+              ...prev,
+              [streamId]: { ...current, status: "error", speed: p.log_line || "Error" },
+            };
+          } else if (p.status === "converting") {
+            return {
+              ...prev,
+              [streamId]: { ...current, percent: 95, status: "converting", speed: "Muxing..." },
+            };
+          } else if (p.percent >= 0) {
+            return {
+              ...prev,
+              [streamId]: {
+                ...current,
+                percent: p.percent,
+                speed: p.speed || current.speed,
+                status: "downloading",
+              },
+            };
+          }
+          return prev;
+        });
+
+        return mapping;
+      });
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
 
   const handleDownload = useCallback(
     async (stream: DetectedStream) => {
-      // Mark as downloading
-      setDownloadingIds((prev) => new Set(prev).add(stream.id));
-
       const jobId = `browser-${Date.now()}`;
       const safeName =
         stream.pageTitle.replace(/[<>:"/\\|?*]/g, "_").slice(0, 80) ||
         "browser_download";
+
+      // Register job -> stream mapping
+      setJobToStream((prev) => ({ ...prev, [jobId]: stream.id }));
+      setDownloads((prev) => ({
+        ...prev,
+        [stream.id]: { jobId, percent: 0, speed: "Starting...", status: "downloading" },
+      }));
 
       // Ensure we have a valid download folder
       let folder = downloadFolder;
@@ -46,19 +112,14 @@ export default function DetectedVideos() {
         }
       }
       if (!folder) {
-        console.error("No download folder available");
-        setDownloadingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(stream.id);
-          return next;
-        });
+        setDownloads((prev) => ({
+          ...prev,
+          [stream.id]: { jobId, percent: 0, speed: "No download folder", status: "error" },
+        }));
         return;
       }
 
       try {
-        // Switch to downloads tab so user sees progress
-        setActiveTab("downloads");
-
         await startBrowserDownload(
           jobId,
           stream.url,
@@ -69,19 +130,23 @@ export default function DetectedVideos() {
           safeName
         );
       } catch (e) {
-        console.error("Browser download failed:", e);
+        setDownloads((prev) => ({
+          ...prev,
+          [stream.id]: { jobId, percent: 0, speed: String(e), status: "error" },
+        }));
       }
-
-      // Remove stream after download completes or fails
-      removeStream(stream.id);
-      setDownloadingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(stream.id);
-        return next;
-      });
     },
-    [downloadFolder, removeStream, setActiveTab]
+    [downloadFolder]
   );
+
+  const handleDismissCompleted = useCallback((streamId: string) => {
+    removeStream(streamId);
+    setDownloads((prev) => {
+      const next = { ...prev };
+      delete next[streamId];
+      return next;
+    });
+  }, [removeStream]);
 
   // Only render when there are detected streams
   if (streams.length === 0) return null;
@@ -150,21 +215,26 @@ export default function DetectedVideos() {
       {/* Stream list */}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
         {streams.map((stream) => {
-          const isDownloading = downloadingIds.has(stream.id);
+          const dl = downloads[stream.id];
+          const isDownloading = dl && dl.status === "downloading";
+          const isConverting = dl && dl.status === "converting";
+          const isComplete = dl && dl.status === "complete";
+          const isError = dl && dl.status === "error";
+          const isActive = isDownloading || isConverting;
+
           return (
             <div
               key={stream.id}
               style={{
                 background: "var(--input-bg)",
-                border: `1px solid ${isDownloading ? "#00f5ff44" : "var(--border-purple)"}`,
+                border: `1px solid ${isComplete ? "#00ff8844" : isError ? "#ff003c44" : isActive ? "#00f5ff44" : "var(--border-purple)"}`,
                 borderRadius: "3px",
                 padding: "10px",
                 marginBottom: "8px",
                 animation: "float-in 0.3s ease-out",
-                opacity: isDownloading ? 0.7 : 1,
               }}
             >
-              {/* Type badge */}
+              {/* Type badge + status */}
               <div
                 style={{
                   display: "flex",
@@ -180,8 +250,7 @@ export default function DetectedVideos() {
                     letterSpacing: "1px",
                     padding: "2px 6px",
                     borderRadius: "2px",
-                    background:
-                      stream.type === "hls" ? "#00f5ff18" : "#b400ff18",
+                    background: stream.type === "hls" ? "#00f5ff18" : "#b400ff18",
                     color: stream.type === "hls" ? "#00f5ff" : "#e040fb",
                     border: `1px solid ${stream.type === "hls" ? "#00f5ff44" : "#b400ff44"}`,
                     fontFamily: "'Orbitron', sans-serif",
@@ -189,9 +258,9 @@ export default function DetectedVideos() {
                 >
                   {stream.type.toUpperCase()}
                 </span>
-                {!isDownloading && (
+                {!isActive && (
                   <button
-                    onClick={() => removeStream(stream.id)}
+                    onClick={() => isComplete ? handleDismissCompleted(stream.id) : removeStream(stream.id)}
                     style={{
                       background: "transparent",
                       border: "none",
@@ -235,38 +304,137 @@ export default function DetectedVideos() {
                 <span>◈ {formatSize(stream.estimatedSize)}</span>
               </div>
 
-              {/* Download button */}
-              <button
-                onClick={() => !isDownloading && handleDownload(stream)}
-                disabled={isDownloading}
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  background: isDownloading
-                    ? "#00f5ff08"
-                    : "linear-gradient(135deg, #00f5ff15, #00f5ff08)",
-                  border: "1px solid #00f5ff44",
+              {/* Progress bar (when downloading) */}
+              {isActive && dl && (
+                <div style={{ marginBottom: "6px" }}>
+                  <div style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: "3px",
+                    fontSize: "9px",
+                  }}>
+                    <span style={{ color: isConverting ? "#b400ff" : "#00f5ff", letterSpacing: "1px" }}>
+                      {isConverting ? "MUXING" : "DOWNLOADING"}
+                      {dl.speed ? ` · ${dl.speed}` : ""}
+                    </span>
+                    <span style={{ color: "#00f5ff", fontWeight: 700 }}>
+                      {Math.round(dl.percent)}%
+                    </span>
+                  </div>
+                  <div style={{
+                    height: "3px",
+                    background: "var(--border-dim)",
+                    borderRadius: "2px",
+                    overflow: "hidden",
+                  }}>
+                    <div style={{
+                      height: "100%",
+                      width: `${dl.percent}%`,
+                      background: isConverting
+                        ? "linear-gradient(90deg, #b400ff, #e040fb)"
+                        : "linear-gradient(90deg, #00f5ff, #00f5ff)",
+                      borderRadius: "2px",
+                      transition: "width 0.3s ease",
+                      boxShadow: `0 0 6px ${isConverting ? "#b400ff" : "#00f5ff"}`,
+                    }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Complete state */}
+              {isComplete && (
+                <div style={{
+                  padding: "4px 8px",
+                  background: "#00ff8812",
+                  border: "1px solid #00ff8833",
                   borderRadius: "2px",
-                  color: "#00f5ff",
-                  fontFamily: "'Orbitron', sans-serif",
                   fontSize: "9px",
+                  color: "#00ff88",
+                  fontFamily: "'Orbitron', sans-serif",
                   fontWeight: 700,
                   letterSpacing: "2px",
-                  cursor: isDownloading ? "wait" : "pointer",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) =>
-                  !isDownloading &&
-                  (e.currentTarget.style.background = "#00f5ff22")
-                }
-                onMouseLeave={(e) =>
-                  !isDownloading &&
-                  (e.currentTarget.style.background =
-                    "linear-gradient(135deg, #00f5ff15, #00f5ff08)")
-                }
-              >
-                {isDownloading ? "DOWNLOADING..." : "DOWNLOAD"}
-              </button>
+                  textAlign: "center",
+                }}>
+                  COMPLETE
+                </div>
+              )}
+
+              {/* Error state */}
+              {isError && dl && (
+                <div style={{ marginBottom: "6px" }}>
+                  <div style={{
+                    padding: "4px 8px",
+                    background: "#ff003c12",
+                    border: "1px solid #ff003c33",
+                    borderRadius: "2px",
+                    fontSize: "9px",
+                    color: "#ff003c",
+                    letterSpacing: "1px",
+                    marginBottom: "4px",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                    title={dl.speed}
+                  >
+                    ERROR: {dl.speed}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setDownloads((prev) => {
+                        const next = { ...prev };
+                        delete next[stream.id];
+                        return next;
+                      });
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "4px",
+                      background: "transparent",
+                      border: "1px solid #ff003c33",
+                      borderRadius: "2px",
+                      color: "#ff003c",
+                      fontFamily: "'Orbitron', sans-serif",
+                      fontSize: "8px",
+                      fontWeight: 700,
+                      letterSpacing: "1px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    RETRY
+                  </button>
+                </div>
+              )}
+
+              {/* Download button (only when not downloading) */}
+              {!dl && (
+                <button
+                  onClick={() => handleDownload(stream)}
+                  style={{
+                    width: "100%",
+                    padding: "6px",
+                    background: "linear-gradient(135deg, #00f5ff15, #00f5ff08)",
+                    border: "1px solid #00f5ff44",
+                    borderRadius: "2px",
+                    color: "#00f5ff",
+                    fontFamily: "'Orbitron', sans-serif",
+                    fontSize: "9px",
+                    fontWeight: 700,
+                    letterSpacing: "2px",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "#00f5ff22")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background =
+                      "linear-gradient(135deg, #00f5ff15, #00f5ff08)")
+                  }
+                >
+                  DOWNLOAD
+                </button>
+              )}
             </div>
           );
         })}
