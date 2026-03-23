@@ -274,7 +274,6 @@ pub async fn create_browser_webview(app: AppHandle, url: String) -> Result<(), S
     let builder = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(
         url.parse().map_err(|e| format!("Invalid URL: {}", e))?
     ))
-    .auto_resize()
     .initialization_script(&script)
     .on_navigation(move |nav_url: &url::Url| {
         let _ = app_clone.emit("browser-navigated", serde_json::json!({ "url": nav_url.as_str() }));
@@ -294,7 +293,7 @@ pub async fn create_browser_webview(app: AppHandle, url: String) -> Result<(), S
     });
 
     let _webview = main_window
-        .add_child(builder, tauri::LogicalPosition::new(0.0, 80.0), tauri::LogicalSize::new(800.0, 600.0))
+        .add_child(builder, tauri::LogicalPosition::new(0.0, -9999.0), tauri::LogicalSize::new(1.0, 1.0))
         .map_err(|e| format!("Failed to create webview: {}", e))?;
 
     {

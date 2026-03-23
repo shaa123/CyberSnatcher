@@ -61,14 +61,17 @@ export default function BrowserView({ settingsOpen }: BrowserViewProps) {
       ).catch(() => {});
     };
 
-    // Small delay to let layout settle
-    const timer = setTimeout(resize, 50);
+    // Delay to let webview fully create before first resize
+    const timer = setTimeout(resize, 300);
+    // Safety net for slow creation
+    const timer2 = setTimeout(resize, 600);
     const observer = new ResizeObserver(resize);
     observer.observe(el);
     window.addEventListener("resize", resize);
 
     return () => {
       clearTimeout(timer);
+      clearTimeout(timer2);
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
