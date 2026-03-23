@@ -1,25 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useBrowserStore } from "../stores/browserStore";
 
 export default function TitleBar() {
   const win = getCurrentWindow();
-  const activeTab = useBrowserStore((s) => s.activeTab);
-  const setActiveTab = useBrowserStore((s) => s.setActiveTab);
-
-  const tabStyle = (tab: "downloads" | "browser") => ({
-    background: activeTab === tab ? "#b400ff18" : "transparent",
-    border: "none",
-    borderBottom: activeTab === tab ? "2px solid #b400ff" : "2px solid transparent",
-    color: activeTab === tab ? "#e040fb" : "var(--text-dim)",
-    fontFamily: "'Orbitron', sans-serif" as const,
-    fontSize: "9px",
-    fontWeight: 700 as const,
-    letterSpacing: "2px",
-    padding: "0 16px",
-    height: "100%",
-    cursor: "pointer",
-    transition: "all 0.2s",
-  });
 
   return (
     <div data-tauri-drag-region className="flex items-center justify-between h-8 select-none shrink-0" style={{ background: "var(--bg)" }}>
@@ -31,13 +13,6 @@ export default function TitleBar() {
         <span data-tauri-drag-region style={{ fontFamily: "'Orbitron', sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "2px", color: "#b400ff" }}>
           CYBERSNATCHER
         </span>
-        <div style={{ width: "1px", height: "14px", background: "var(--border-purple)", margin: "0 8px" }} />
-        <button onClick={() => setActiveTab("downloads")} style={tabStyle("downloads")}>
-          DOWNLOADS
-        </button>
-        <button onClick={() => setActiveTab("browser")} style={tabStyle("browser")}>
-          BROWSER
-        </button>
       </div>
       <div className="flex items-center h-full">
         <button onClick={() => win.minimize()} className="flex items-center justify-center w-10 h-full transition-colors" style={{ color: "var(--text-dim)" }} onMouseEnter={e => e.currentTarget.style.background = "#ffffff08"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>

@@ -3,8 +3,6 @@ import { downloadDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar";
 import SettingsModal from "./components/Settings/SettingsModal";
-import BrowserView from "./components/Browser/BrowserView";
-import { useBrowserStore } from "./stores/browserStore";
 import { analyzeUrl, startDownload, cancelDownload, checkYtdlp, checkFfmpeg, showInFolder, openFile, convertFile, nativeDownload, updateYtdlp } from "./lib/tauri";
 import type { DownloadProgress, DownloadItem, ConversionPreset } from "./lib/types";
 
@@ -46,8 +44,6 @@ function formatToQuality(f: string, qualityIdx: number): string {
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const activeTab = useBrowserStore((s) => s.activeTab);
-
   // ── All existing state (unchanged) ──
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState("Default");
@@ -125,19 +121,6 @@ export default function App() {
   useEffect(() => {
     const unlisten = listen<DownloadProgress>("download-progress", (event) => {
       const p = event.payload;
-      const isBrowserDownload = p.job_id.startsWith("browser-");
-
-      // Browser downloads: track in history, skip main UI state
-      if (isBrowserDownload) {
-        if (p.status === "complete") {
-          setHistory((h) => [
-            { id: p.job_id, url: "", title: p.log_line.replace("Browser HLS download complete", "Browser Download").replace("Browser DASH download complete", "Browser Download"), site_name: "Browser", status: "complete", progress: 100, speed: "", eta: "", outputDir: downloadFolder, quality: "best", formatType: "HLS", logs: [], filePath: p.file_path, fileSize: p.file_size, created_at: Date.now() },
-            ...h,
-          ]);
-        }
-        return;
-      }
-
       if (p.job_id !== currentJobId && currentJobId) return;
 
       if (p.log_line && !p.log_line.startsWith("CYBERPROG")) {
@@ -396,11 +379,8 @@ export default function App() {
         </button>
       </div>
 
-      {/* ── Browser Tab ── */}
-      {activeTab === "browser" && <BrowserView settingsOpen={showSettings} />}
-
-      {/* ── Downloads Tab ── */}
-      <div style={{ flex: 1, overflowY: "auto", display: activeTab === "downloads" ? "flex" : "none", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>
+      {/* ── Downloads ── */}
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>
           <div style={{ width: "100%", maxWidth: "700px" }}>
 
             {/* Header */}

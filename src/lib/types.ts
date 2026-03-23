@@ -50,30 +50,3 @@ export interface MediaInfo {
   bit_rate: string;
   nb_frames: string;
 }
-
-// ── Browser Types ──
-
-export interface DetectedStream {
-  id: string;
-  url: string;
-  type: "hls" | "dash";
-  pageUrl: string;
-  pageTitle: string;
-  estimatedDuration: number | null;
-  estimatedSize: number | null;
-  qualities: string[];
-  detectedAt: number;
-}
-
-export interface FavoriteItem {
-  id: string;
-  url: string;
-  title: string;
-  favicon?: string;
-  createdAt: number;
-}
-
-export interface BrowserSettings {
-  minDuration: number;    // seconds, default 40
-  minFileSize: number;    // bytes, default 2097152 (2MB)
-}

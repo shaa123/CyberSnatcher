@@ -1,7 +1,5 @@
 import { useState } from "react";
 import { useDownloadStore } from "../../stores/downloadStore";
-import { useBrowserStore } from "../../stores/browserStore";
-import { saveBrowserSettings } from "../../lib/tauri";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -11,18 +9,8 @@ interface SettingsModalProps {
 export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModalProps) {
   const downloadFolder = useDownloadStore((s) => s.downloadFolder);
   const setDownloadFolder = useDownloadStore((s) => s.setDownloadFolder);
-  const browserSettings = useBrowserStore((s) => s.browserSettings);
-  const setBrowserSettings = useBrowserStore((s) => s.setBrowserSettings);
 
   const [folderInput, setFolderInput] = useState(downloadFolder);
-  const [minDuration, setMinDuration] = useState(browserSettings.minDuration);
-  const [minSizeMB, setMinSizeMB] = useState(browserSettings.minFileSize / 1048576);
-
-  const handleSaveBrowserSettings = () => {
-    const sizeBytes = Math.round(minSizeMB * 1048576);
-    setBrowserSettings({ minDuration, minFileSize: sizeBytes });
-    saveBrowserSettings(minDuration, sizeBytes).catch(() => {});
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -73,75 +61,12 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
               </p>
             </div>
 
-            {/* Browser Detection Settings */}
-            <div>
-              <label className="block text-xs font-semibold text-cyber-text-secondary mb-1.5" style={{ letterSpacing: "1px", color: "var(--cyan)" }}>
-                Browser Stream Detection
-              </label>
-              <div className="p-3 rounded-lg bg-cyber-bg border border-cyber-border space-y-3">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-[11px] text-cyber-text-secondary">Min Duration</span>
-                    <span className="text-[11px] font-mono" style={{ color: "var(--cyan)" }}>{minDuration}s</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={5}
-                    max={300}
-                    step={5}
-                    value={minDuration}
-                    onChange={(e) => setMinDuration(Number(e.target.value))}
-                    style={{
-                      width: "100%", height: "4px", appearance: "none", WebkitAppearance: "none",
-                      background: `linear-gradient(90deg, #00f5ff ${(minDuration / 300) * 100}%, var(--border-dim) ${(minDuration / 300) * 100}%)`,
-                      borderRadius: "2px", outline: "none", cursor: "pointer",
-                    }}
-                  />
-                  <div className="flex justify-between text-[9px] text-cyber-text-tertiary mt-0.5">
-                    <span>5s</span>
-                    <span>300s</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-[11px] text-cyber-text-secondary">Min File Size</span>
-                    <span className="text-[11px] font-mono" style={{ color: "var(--cyan)" }}>{minSizeMB} MB</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0.5}
-                    max={50}
-                    step={0.5}
-                    value={minSizeMB}
-                    onChange={(e) => setMinSizeMB(Number(e.target.value))}
-                    style={{
-                      width: "100%", height: "4px", appearance: "none", WebkitAppearance: "none",
-                      background: `linear-gradient(90deg, #00f5ff ${(minSizeMB / 50) * 100}%, var(--border-dim) ${(minSizeMB / 50) * 100}%)`,
-                      borderRadius: "2px", outline: "none", cursor: "pointer",
-                    }}
-                  />
-                  <div className="flex justify-between text-[9px] text-cyber-text-tertiary mt-0.5">
-                    <span>0.5 MB</span>
-                    <span>50 MB</span>
-                  </div>
-                </div>
-                <button
-                  onClick={handleSaveBrowserSettings}
-                  className="w-full px-3 py-1.5 bg-cyber-primary/10 border border-cyber-primary/30 rounded text-[11px] text-cyber-primary hover:bg-cyber-primary/20 transition-all"
-                  style={{ letterSpacing: "1px" }}
-                >
-                  Apply Detection Settings
-                </button>
-              </div>
-            </div>
-
             {/* Info */}
             <div className="p-3 rounded-lg bg-cyber-bg border border-cyber-border space-y-1">
               <p className="text-xs text-cyber-text-secondary font-semibold">How it works</p>
               <p className="text-[10px] text-cyber-text-tertiary leading-relaxed">
                 CyberSnatcher uses yt-dlp under the hood to download videos. Make sure yt-dlp is installed and in your PATH.
                 Paste any URL from YouTube, Twitter/X, TikTok, Instagram, Reddit, or direct video links.
-                The Browser tab auto-detects HLS/DASH streams and downloads them natively (no yt-dlp).
               </p>
             </div>
           </div>

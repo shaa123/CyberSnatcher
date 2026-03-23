@@ -3,8 +3,3 @@ pub mod convert;
 pub mod download;
 pub mod native;
 pub mod settings;
-pub mod browser;
-pub mod favorites;
-pub mod detect;
-pub mod browser_download;
-pub mod browser_settings;
