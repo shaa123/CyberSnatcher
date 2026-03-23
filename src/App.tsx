@@ -384,7 +384,7 @@ export default function App() {
       </div>
 
       {/* ── Browser Tab ── */}
-      {activeTab === "browser" && <BrowserView />}
+      {activeTab === "browser" && <BrowserView settingsOpen={showSettings} />}
 
       {/* ── Downloads Tab ── */}
       <div style={{ flex: 1, overflowY: "auto", display: activeTab === "downloads" ? "flex" : "none", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>

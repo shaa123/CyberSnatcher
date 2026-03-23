@@ -11,33 +11,47 @@ import BrowserBar from "./BrowserBar";
 import DetectedVideos from "./DetectedVideos";
 import type { DetectedStream } from "../../lib/types";
 
-export default function BrowserView() {
+interface BrowserViewProps {
+  settingsOpen: boolean;
+}
+
+export default function BrowserView({ settingsOpen }: BrowserViewProps) {
   const setBrowserUrl = useBrowserStore((s) => s.setBrowserUrl);
   const setIsLoading = useBrowserStore((s) => s.setIsLoading);
   const addDetectedStream = useBrowserStore((s) => s.addDetectedStream);
   const browserSettings = useBrowserStore((s) => s.browserSettings);
   const browserUrl = useBrowserStore((s) => s.browserUrl);
+  const streams = useBrowserStore((s) => s.detectedStreams);
   const webviewAreaRef = useRef<HTMLDivElement>(null);
+  const webviewCreatedRef = useRef(false);
 
   // Create webview on mount
   useEffect(() => {
     const timer = setTimeout(() => {
-      createBrowserWebview(browserUrl).catch((e) =>
-        console.error("Failed to create browser webview:", e)
-      );
+      createBrowserWebview(browserUrl)
+        .then(() => {
+          webviewCreatedRef.current = true;
+        })
+        .catch((e) => console.error("Failed to create browser webview:", e));
     }, 100);
     return () => {
       clearTimeout(timer);
+      webviewCreatedRef.current = false;
       destroyBrowserWebview().catch(() => {});
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Resize webview to fit container
+  // Resize webview to fit container — and HIDE when settings is open
   useEffect(() => {
     const el = webviewAreaRef.current;
     if (!el) return;
 
     const resize = () => {
+      if (settingsOpen) {
+        // Move webview off-screen so settings modal is accessible
+        resizeBrowserWebview(0, -9999, 1, 1).catch(() => {});
+        return;
+      }
       const rect = el.getBoundingClientRect();
       resizeBrowserWebview(
         Math.round(rect.x),
@@ -47,16 +61,18 @@ export default function BrowserView() {
       ).catch(() => {});
     };
 
-    resize();
+    // Small delay to let layout settle
+    const timer = setTimeout(resize, 50);
     const observer = new ResizeObserver(resize);
     observer.observe(el);
     window.addEventListener("resize", resize);
 
     return () => {
+      clearTimeout(timer);
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [settingsOpen, streams.length]); // re-run when detection panel appears/disappears
 
   // Listen for browser events from Rust
   useEffect(() => {
@@ -77,7 +93,7 @@ export default function BrowserView() {
 
   // Listen for stream detection events
   const handleStreamDetected = useCallback(
-    async (manifestUrl: string, streamType: "hls" | "dash", pageUrl: string) => {
+    async (manifestUrl: string, streamType: "hls" | "dash", pageUrl: string, pageTitle: string) => {
       try {
         const result = await validateStream(
           manifestUrl,
@@ -92,7 +108,7 @@ export default function BrowserView() {
             url: manifestUrl,
             type: streamType,
             pageUrl,
-            pageTitle: result.title || pageUrl.replace(/^https?:\/\//, "").split("/")[0],
+            pageTitle: pageTitle || result.title || pageUrl.replace(/^https?:\/\//, "").split("/")[0],
             estimatedDuration: result.duration,
             estimatedSize: result.size,
             qualities: result.qualities || [],
@@ -112,17 +128,36 @@ export default function BrowserView() {
       manifest_url: string;
       stream_type: string;
       page_url: string;
+      page_title: string;
     }>("stream-detected-raw", (e) => {
       handleStreamDetected(
         e.payload.manifest_url,
         e.payload.stream_type as "hls" | "dash",
-        e.payload.page_url
+        e.payload.page_url,
+        e.payload.page_title || ""
       );
     });
     return () => {
       unlisten.then((fn) => fn());
     };
   }, [handleStreamDetected]);
+
+  // Callback for when address bar gets focus — hide webview so it's not blocking
+  const handleBarFocus = useCallback(() => {
+    resizeBrowserWebview(0, -9999, 1, 1).catch(() => {});
+  }, []);
+
+  const handleBarBlur = useCallback(() => {
+    const el = webviewAreaRef.current;
+    if (!el || settingsOpen) return;
+    const rect = el.getBoundingClientRect();
+    resizeBrowserWebview(
+      Math.round(rect.x),
+      Math.round(rect.y),
+      Math.round(rect.width),
+      Math.round(rect.height)
+    ).catch(() => {});
+  }, [settingsOpen]);
 
   return (
     <div
@@ -133,7 +168,7 @@ export default function BrowserView() {
         overflow: "hidden",
       }}
     >
-      <BrowserBar />
+      <BrowserBar onFocus={handleBarFocus} onBlur={handleBarBlur} />
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Webview area - the actual webview is overlaid on top by Tauri */}
         <div

@@ -12,7 +12,12 @@ import {
 } from "../../lib/tauri";
 import FavoritesDropdown from "./FavoritesDropdown";
 
-export default function BrowserBar() {
+interface BrowserBarProps {
+  onFocus?: () => void;
+  onBlur?: () => void;
+}
+
+export default function BrowserBar({ onFocus, onBlur }: BrowserBarProps) {
   const browserUrl = useBrowserStore((s) => s.browserUrl);
   const setBrowserUrl = useBrowserStore((s) => s.setBrowserUrl);
   const isLoading = useBrowserStore((s) => s.isLoading);
@@ -161,6 +166,8 @@ export default function BrowserBar() {
           value={urlInput}
           onChange={(e) => setUrlInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleNavigate()}
+          onFocus={onFocus}
+          onBlur={onBlur}
           placeholder="Search or enter URL..."
           style={{
             width: "100%",

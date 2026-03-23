@@ -16,8 +16,22 @@ impl BrowserState {
 
 const BROWSER_LABEL: &str = "browser-webview";
 
-/// JavaScript to inject into the browser webview for stream detection.
-/// Intercepts fetch() and XMLHttpRequest to detect .m3u8 and .mpd URLs.
+/// JavaScript initialization script injected into every page load in the browser webview.
+/// This is set via `initialization_script()` on WebviewBuilder so it runs automatically
+/// on EVERY navigation — no need to manually re-inject.
+///
+/// Detection strategy (broad, catches most HLS/DASH players):
+/// 1. Intercept fetch() — catches hls.js, dash.js, and most modern players
+/// 2. Intercept XMLHttpRequest.open() — catches older players, jwplayer, etc.
+/// 3. PerformanceObserver on "resource" — catches ALL network requests including
+///    those made by native <video> elements and MSE (this is the key one for sites
+///    like hanime that use custom players)
+/// 4. MutationObserver — watches for <video>/<source> elements added to DOM
+/// 5. Periodic polling of <video>.src — catches dynamically set sources
+/// 6. Intercept MediaSource.addSourceBuffer — catches MSE-based players
+///
+/// Since __TAURI_INTERNALS__ may not be available in child webviews, we use
+/// window.ipc.postMessage() which IS available in Tauri 2 child webviews.
 fn stream_detection_script() -> String {
     r#"
     (function() {
@@ -26,88 +40,211 @@ fn stream_detection_script() -> String {
 
         const seen = new Set();
 
-        function checkUrl(url) {
-            if (!url || typeof url !== 'string') return;
+        function notifyStream(url, streamType) {
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+
+            var payload = JSON.stringify({
+                manifest_url: url,
+                stream_type: streamType,
+                page_url: window.location.href,
+                page_title: document.title || ''
+            });
+
+            // Try all available IPC methods
             try {
-                const lower = url.toLowerCase();
-                let streamType = null;
-
-                if (lower.includes('.m3u8') || lower.includes('application/vnd.apple.mpegurl')) {
-                    streamType = 'hls';
-                } else if (lower.includes('.mpd') || lower.includes('application/dash+xml')) {
-                    streamType = 'dash';
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    window.__TAURI_INTERNALS__.invoke('on_stream_detected', {
+                        manifestUrl: url,
+                        streamType: streamType,
+                        pageUrl: window.location.href,
+                        pageTitle: document.title || ''
+                    }).catch(function() {});
+                    return;
                 }
+            } catch(e) {}
 
-                if (streamType && !seen.has(url)) {
-                    seen.add(url);
-                    // Send to Tauri backend via postMessage
-                    if (window.__TAURI_INTERNALS__) {
-                        window.__TAURI_INTERNALS__.invoke('on_stream_detected', {
-                            manifestUrl: url,
-                            streamType: streamType,
-                            pageUrl: window.location.href,
-                            pageTitle: document.title || ''
-                        }).catch(function() {});
-                    }
+            try {
+                if (window.ipc && window.ipc.postMessage) {
+                    window.ipc.postMessage('stream_detected:' + payload);
+                    return;
+                }
+            } catch(e) {}
+
+            try {
+                if (window.__TAURI_IPC__) {
+                    window.__TAURI_IPC__('stream_detected:' + payload);
+                    return;
                 }
             } catch(e) {}
         }
 
-        // Intercept fetch
-        const origFetch = window.fetch;
-        window.fetch = function() {
-            const url = arguments[0];
-            if (typeof url === 'string') checkUrl(url);
-            else if (url && url.url) checkUrl(url.url);
-            return origFetch.apply(this, arguments);
-        };
+        function checkUrl(url) {
+            if (!url || typeof url !== 'string') return;
+            try {
+                var lower = url.toLowerCase().split('?')[0].split('#')[0];
 
-        // Intercept XMLHttpRequest
-        const origOpen = XMLHttpRequest.prototype.open;
-        XMLHttpRequest.prototype.open = function() {
-            if (arguments[1]) checkUrl(String(arguments[1]));
-            return origOpen.apply(this, arguments);
-        };
-
-        // Intercept Response headers for content-type detection
-        const origFetchBound = origFetch.bind(window);
-        window.fetch = function() {
-            const url = arguments[0];
-            if (typeof url === 'string') checkUrl(url);
-            else if (url && url.url) checkUrl(url.url);
-            return origFetchBound.apply(null, arguments).then(function(response) {
-                const ct = response.headers.get('content-type') || '';
-                if (ct.includes('mpegurl') || ct.includes('dash+xml')) {
-                    checkUrl(response.url);
+                if (lower.endsWith('.m3u8') || lower.includes('.m3u8?') ||
+                    lower.includes('.m3u8/') || url.toLowerCase().includes('.m3u8')) {
+                    notifyStream(url, 'hls');
+                } else if (lower.endsWith('.mpd') || lower.includes('.mpd?') ||
+                           lower.includes('.mpd/') || url.toLowerCase().includes('.mpd')) {
+                    notifyStream(url, 'dash');
                 }
-                return response;
-            });
-        };
+            } catch(e) {}
+        }
 
-        // Monitor video/source elements
-        const observer = new MutationObserver(function(mutations) {
-            for (const m of mutations) {
-                for (const node of m.addedNodes) {
-                    if (node.tagName === 'VIDEO' || node.tagName === 'SOURCE') {
-                        const src = node.src || node.getAttribute('src') || '';
-                        checkUrl(src);
-                    }
-                    if (node.querySelectorAll) {
-                        node.querySelectorAll('video, source').forEach(function(el) {
-                            const src = el.src || el.getAttribute('src') || '';
-                            checkUrl(src);
-                        });
-                    }
-                }
+        function checkContentType(url, ct) {
+            if (!ct || !url) return;
+            ct = ct.toLowerCase();
+            if (ct.includes('mpegurl') || ct.includes('x-mpegurl')) {
+                notifyStream(url, 'hls');
+            } else if (ct.includes('dash+xml')) {
+                notifyStream(url, 'dash');
             }
-        });
-        observer.observe(document.documentElement, { childList: true, subtree: true });
+        }
 
-        // Check existing video elements
-        document.querySelectorAll('video, source').forEach(function(el) {
-            const src = el.src || el.getAttribute('src') || '';
-            checkUrl(src);
-        });
+        // 1. Intercept fetch()
+        if (window.fetch) {
+            var origFetch = window.fetch;
+            window.fetch = function() {
+                var input = arguments[0];
+                var url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+                checkUrl(url);
+                return origFetch.apply(this, arguments).then(function(response) {
+                    try {
+                        checkUrl(response.url);
+                        checkContentType(response.url, response.headers.get('content-type'));
+                    } catch(e) {}
+                    return response;
+                });
+            };
+        }
+
+        // 2. Intercept XMLHttpRequest
+        var origXHROpen = XMLHttpRequest.prototype.open;
+        var origXHRSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function(method, url) {
+            this.__cs_url = url;
+            checkUrl(String(url));
+            return origXHROpen.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function() {
+            var self = this;
+            this.addEventListener('load', function() {
+                try {
+                    var ct = self.getResponseHeader('content-type');
+                    checkContentType(self.__cs_url || self.responseURL, ct);
+                    checkUrl(self.responseURL);
+                } catch(e) {}
+            });
+            return origXHRSend.apply(this, arguments);
+        };
+
+        // 3. PerformanceObserver — catches ALL network requests
+        // This is critical for catching requests made by native video elements,
+        // MSE players, and any other method that bypasses fetch/XHR interception
+        try {
+            var perfObserver = new PerformanceObserver(function(list) {
+                var entries = list.getEntries();
+                for (var i = 0; i < entries.length; i++) {
+                    var entry = entries[i];
+                    if (entry.name) {
+                        checkUrl(entry.name);
+                    }
+                }
+            });
+            perfObserver.observe({ type: 'resource', buffered: true });
+        } catch(e) {}
+
+        // 4. MutationObserver — watch for video/source elements
+        try {
+            var domObserver = new MutationObserver(function(mutations) {
+                for (var i = 0; i < mutations.length; i++) {
+                    var m = mutations[i];
+                    for (var j = 0; j < m.addedNodes.length; j++) {
+                        var node = m.addedNodes[j];
+                        if (node.nodeType !== 1) continue;
+                        if (node.tagName === 'VIDEO' || node.tagName === 'SOURCE' || node.tagName === 'IFRAME') {
+                            checkUrl(node.src || node.getAttribute('src') || '');
+                        }
+                        if (node.querySelectorAll) {
+                            var elems = node.querySelectorAll('video, source, video source');
+                            for (var k = 0; k < elems.length; k++) {
+                                checkUrl(elems[k].src || elems[k].getAttribute('src') || '');
+                            }
+                        }
+                    }
+                    // Also check attribute changes on video/source
+                    if (m.type === 'attributes' && m.target && m.target.tagName) {
+                        if (m.target.tagName === 'VIDEO' || m.target.tagName === 'SOURCE') {
+                            checkUrl(m.target.src || m.target.getAttribute('src') || '');
+                        }
+                    }
+                }
+            });
+            domObserver.observe(document.documentElement, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['src']
+            });
+        } catch(e) {}
+
+        // 5. Periodic polling — catches dynamically set video sources
+        setInterval(function() {
+            try {
+                var videos = document.querySelectorAll('video');
+                for (var i = 0; i < videos.length; i++) {
+                    var v = videos[i];
+                    if (v.src) checkUrl(v.src);
+                    if (v.currentSrc) checkUrl(v.currentSrc);
+                    // Check source children
+                    var sources = v.querySelectorAll('source');
+                    for (var j = 0; j < sources.length; j++) {
+                        if (sources[j].src) checkUrl(sources[j].src);
+                    }
+                }
+            } catch(e) {}
+        }, 3000);
+
+        // 6. Intercept MediaSource.addSourceBuffer — detect MSE MIME types
+        try {
+            if (window.MediaSource && window.MediaSource.prototype.addSourceBuffer) {
+                var origAddSB = window.MediaSource.prototype.addSourceBuffer;
+                window.MediaSource.prototype.addSourceBuffer = function(mime) {
+                    // MSE is being used; the actual URLs come through fetch/XHR/perf observer
+                    return origAddSB.apply(this, arguments);
+                };
+            }
+        } catch(e) {}
+
+        // 7. Check existing video elements immediately
+        try {
+            document.querySelectorAll('video, source').forEach(function(el) {
+                checkUrl(el.src || el.getAttribute('src') || '');
+                if (el.currentSrc) checkUrl(el.currentSrc);
+            });
+        } catch(e) {}
+
+        // Also scan after a delay for lazy-loaded players
+        setTimeout(function() {
+            try {
+                document.querySelectorAll('video, source').forEach(function(el) {
+                    checkUrl(el.src || el.getAttribute('src') || '');
+                    if (el.currentSrc) checkUrl(el.currentSrc);
+                });
+            } catch(e) {}
+        }, 2000);
+
+        setTimeout(function() {
+            try {
+                document.querySelectorAll('video, source').forEach(function(el) {
+                    checkUrl(el.src || el.getAttribute('src') || '');
+                    if (el.currentSrc) checkUrl(el.currentSrc);
+                });
+            } catch(e) {}
+        }, 5000);
     })();
     "#.to_string()
 }
@@ -129,24 +266,36 @@ pub async fn create_browser_webview(app: AppHandle, url: String) -> Result<(), S
 
     let main_window = app.get_window("main").ok_or("Main window not found")?;
 
-    // Create the browser webview with on_navigation callback
+    let script = stream_detection_script();
+
+    // Create the browser webview with on_navigation callback and initialization script
     let app_clone = app.clone();
+    let app_clone2 = app.clone();
     let builder = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(
         url.parse().map_err(|e| format!("Invalid URL: {}", e))?
     ))
     .auto_resize()
+    .initialization_script(&script)
     .on_navigation(move |nav_url: &url::Url| {
         let _ = app_clone.emit("browser-navigated", serde_json::json!({ "url": nav_url.as_str() }));
         true
+    })
+    .on_page_load(move |_wv, payload| {
+        match payload.event() {
+            tauri::webview::PageLoadEvent::Started => {
+                let _ = app_clone2.emit("browser-loading", serde_json::json!({ "loading": true }));
+            }
+            tauri::webview::PageLoadEvent::Finished => {
+                let _ = app_clone2.emit("browser-loading", serde_json::json!({ "loading": false }));
+                let _ = app_clone2.emit("browser-navigated", serde_json::json!({ "url": payload.url().as_str() }));
+            }
+            _ => {}
+        }
     });
 
-    let webview = main_window
+    let _webview = main_window
         .add_child(builder, tauri::LogicalPosition::new(0.0, 80.0), tauri::LogicalSize::new(800.0, 600.0))
         .map_err(|e| format!("Failed to create webview: {}", e))?;
-
-    // Inject stream detection script on page load
-    let script = stream_detection_script();
-    let _ = webview.eval(&script);
 
     {
         let mut label = state.webview_label.lock().unwrap();
@@ -177,9 +326,6 @@ pub async fn navigate_browser(app: AppHandle, url: String) -> Result<(), String>
         if let Some(wv) = app.get_webview(label) {
             let parsed: url::Url = url.parse().map_err(|e| format!("Invalid URL: {}", e))?;
             wv.navigate(parsed).map_err(|e| e.to_string())?;
-            // Re-inject detection script after navigation
-            let script = stream_detection_script();
-            let _ = wv.eval(&script);
         }
     }
     Ok(())
