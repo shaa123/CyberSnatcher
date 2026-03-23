@@ -1,8 +1,9 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useBrowserStore } from "../../stores/browserStore";
 import { useDownloadStore } from "../../stores/downloadStore";
 import { startBrowserDownload } from "../../lib/tauri";
 import type { DetectedStream } from "../../lib/types";
+import { downloadDir } from "@tauri-apps/api/path";
 
 function formatDuration(seconds: number | null): string {
   if (seconds == null) return "—";
@@ -21,49 +22,65 @@ export default function DetectedVideos() {
   const streams = useBrowserStore((s) => s.detectedStreams);
   const clearStreams = useBrowserStore((s) => s.clearDetectedStreams);
   const removeStream = useBrowserStore((s) => s.removeDetectedStream);
+  const setActiveTab = useBrowserStore((s) => s.setActiveTab);
   const downloadFolder = useDownloadStore((s) => s.downloadFolder);
-  const addItem = useDownloadStore((s) => s.addItem);
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
   const handleDownload = useCallback(
     async (stream: DetectedStream) => {
+      // Mark as downloading
+      setDownloadingIds((prev) => new Set(prev).add(stream.id));
+
       const jobId = `browser-${Date.now()}`;
       const safeName =
         stream.pageTitle.replace(/[<>:"/\\|?*]/g, "_").slice(0, 80) ||
         "browser_download";
 
-      addItem({
-        id: jobId,
-        url: stream.url,
-        title: safeName,
-        site_name: `Browser ${stream.type.toUpperCase()}`,
-        status: "downloading",
-        progress: 0,
-        speed: "",
-        eta: "",
-        outputDir: downloadFolder,
-        quality: "best",
-        formatType: stream.type.toUpperCase(),
-        logs: [],
-        created_at: Date.now(),
-      });
+      // Ensure we have a valid download folder
+      let folder = downloadFolder;
+      if (!folder) {
+        try {
+          folder = await downloadDir();
+        } catch {
+          folder = "";
+        }
+      }
+      if (!folder) {
+        console.error("No download folder available");
+        setDownloadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(stream.id);
+          return next;
+        });
+        return;
+      }
 
       try {
+        // Switch to downloads tab so user sees progress
+        setActiveTab("downloads");
+
         await startBrowserDownload(
           jobId,
           stream.url,
           stream.type,
           stream.pageUrl,
           "best",
-          downloadFolder,
+          folder,
           safeName
         );
       } catch (e) {
         console.error("Browser download failed:", e);
       }
 
+      // Remove stream after download completes or fails
       removeStream(stream.id);
+      setDownloadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(stream.id);
+        return next;
+      });
     },
-    [downloadFolder, addItem, removeStream]
+    [downloadFolder, removeStream, setActiveTab]
   );
 
   // Only render when there are detected streams
@@ -132,116 +149,127 @@ export default function DetectedVideos() {
 
       {/* Stream list */}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
-        {streams.map((stream) => (
-          <div
-            key={stream.id}
-            style={{
-              background: "var(--input-bg)",
-              border: "1px solid var(--border-purple)",
-              borderRadius: "3px",
-              padding: "10px",
-              marginBottom: "8px",
-              animation: "float-in 0.3s ease-out",
-            }}
-          >
-            {/* Type badge */}
+        {streams.map((stream) => {
+          const isDownloading = downloadingIds.has(stream.id);
+          return (
             <div
+              key={stream.id}
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "6px",
+                background: "var(--input-bg)",
+                border: `1px solid ${isDownloading ? "#00f5ff44" : "var(--border-purple)"}`,
+                borderRadius: "3px",
+                padding: "10px",
+                marginBottom: "8px",
+                animation: "float-in 0.3s ease-out",
+                opacity: isDownloading ? 0.7 : 1,
               }}
             >
-              <span
+              {/* Type badge */}
+              <div
                 style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "6px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "9px",
+                    fontWeight: 700,
+                    letterSpacing: "1px",
+                    padding: "2px 6px",
+                    borderRadius: "2px",
+                    background:
+                      stream.type === "hls" ? "#00f5ff18" : "#b400ff18",
+                    color: stream.type === "hls" ? "#00f5ff" : "#e040fb",
+                    border: `1px solid ${stream.type === "hls" ? "#00f5ff44" : "#b400ff44"}`,
+                    fontFamily: "'Orbitron', sans-serif",
+                  }}
+                >
+                  {stream.type.toUpperCase()}
+                </span>
+                {!isDownloading && (
+                  <button
+                    onClick={() => removeStream(stream.id)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--text-dimmer)",
+                      cursor: "pointer",
+                      fontSize: "11px",
+                      padding: "0 2px",
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Title */}
+              <div
+                style={{
+                  fontSize: "11px",
+                  color: "var(--text)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  marginBottom: "4px",
+                }}
+                title={stream.pageTitle}
+              >
+                {stream.pageTitle || "Unknown"}
+              </div>
+
+              {/* Stats */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  marginBottom: "8px",
+                  fontSize: "10px",
+                  color: "var(--text-dim)",
+                }}
+              >
+                <span>⏱ {formatDuration(stream.estimatedDuration)}</span>
+                <span>◈ {formatSize(stream.estimatedSize)}</span>
+              </div>
+
+              {/* Download button */}
+              <button
+                onClick={() => !isDownloading && handleDownload(stream)}
+                disabled={isDownloading}
+                style={{
+                  width: "100%",
+                  padding: "6px",
+                  background: isDownloading
+                    ? "#00f5ff08"
+                    : "linear-gradient(135deg, #00f5ff15, #00f5ff08)",
+                  border: "1px solid #00f5ff44",
+                  borderRadius: "2px",
+                  color: "#00f5ff",
+                  fontFamily: "'Orbitron', sans-serif",
                   fontSize: "9px",
                   fontWeight: 700,
-                  letterSpacing: "1px",
-                  padding: "2px 6px",
-                  borderRadius: "2px",
-                  background:
-                    stream.type === "hls" ? "#00f5ff18" : "#b400ff18",
-                  color: stream.type === "hls" ? "#00f5ff" : "#e040fb",
-                  border: `1px solid ${stream.type === "hls" ? "#00f5ff44" : "#b400ff44"}`,
-                  fontFamily: "'Orbitron', sans-serif",
+                  letterSpacing: "2px",
+                  cursor: isDownloading ? "wait" : "pointer",
+                  transition: "all 0.2s",
                 }}
+                onMouseEnter={(e) =>
+                  !isDownloading &&
+                  (e.currentTarget.style.background = "#00f5ff22")
+                }
+                onMouseLeave={(e) =>
+                  !isDownloading &&
+                  (e.currentTarget.style.background =
+                    "linear-gradient(135deg, #00f5ff15, #00f5ff08)")
+                }
               >
-                {stream.type.toUpperCase()}
-              </span>
-              <button
-                onClick={() => removeStream(stream.id)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "var(--text-dimmer)",
-                  cursor: "pointer",
-                  fontSize: "11px",
-                  padding: "0 2px",
-                }}
-              >
-                ✕
+                {isDownloading ? "DOWNLOADING..." : "DOWNLOAD"}
               </button>
             </div>
-
-            {/* Title */}
-            <div
-              style={{
-                fontSize: "11px",
-                color: "var(--text)",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                marginBottom: "4px",
-              }}
-              title={stream.pageTitle}
-            >
-              {stream.pageTitle || "Unknown"}
-            </div>
-
-            {/* Stats */}
-            <div
-              style={{
-                display: "flex",
-                gap: "10px",
-                marginBottom: "8px",
-                fontSize: "10px",
-                color: "var(--text-dim)",
-              }}
-            >
-              <span>⏱ {formatDuration(stream.estimatedDuration)}</span>
-              <span>◈ {formatSize(stream.estimatedSize)}</span>
-            </div>
-
-            {/* Download button */}
-            <button
-              onClick={() => handleDownload(stream)}
-              style={{
-                width: "100%",
-                padding: "6px",
-                background: "linear-gradient(135deg, #00f5ff15, #00f5ff08)",
-                border: "1px solid #00f5ff44",
-                borderRadius: "2px",
-                color: "#00f5ff",
-                fontFamily: "'Orbitron', sans-serif",
-                fontSize: "9px",
-                fontWeight: 700,
-                letterSpacing: "2px",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "#00f5ff22")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background =
-                  "linear-gradient(135deg, #00f5ff15, #00f5ff08)")
-              }
-            >
-              DOWNLOAD
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

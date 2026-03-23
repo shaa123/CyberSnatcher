@@ -125,6 +125,19 @@ export default function App() {
   useEffect(() => {
     const unlisten = listen<DownloadProgress>("download-progress", (event) => {
       const p = event.payload;
+      const isBrowserDownload = p.job_id.startsWith("browser-");
+
+      // Browser downloads: track in history, skip main UI state
+      if (isBrowserDownload) {
+        if (p.status === "complete") {
+          setHistory((h) => [
+            { id: p.job_id, url: "", title: p.log_line.replace("Browser HLS download complete", "Browser Download").replace("Browser DASH download complete", "Browser Download"), site_name: "Browser", status: "complete", progress: 100, speed: "", eta: "", outputDir: downloadFolder, quality: "best", formatType: "HLS", logs: [], filePath: p.file_path, fileSize: p.file_size, created_at: Date.now() },
+            ...h,
+          ]);
+        }
+        return;
+      }
+
       if (p.job_id !== currentJobId && currentJobId) return;
 
       if (p.log_line && !p.log_line.startsWith("CYBERPROG")) {
