@@ -72,7 +72,8 @@ export default function App() {
   const [writeSubs, setWriteSubs] = useState(false);
   const [duplicateUrl, setDuplicateUrl] = useState<string | null>(null);
   const [smartMode, setSmartMode] = useState(true);
-  const addLog = useCallback((msg: string) => { console.log("[CyberSnatcher]", msg); }, []);
+  const [logs, setLogs] = useState<string[]>([]);
+  const addLog = useCallback((msg: string) => { setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]); }, []);
 
   useEffect(() => {
     const iv = setInterval(() => {
@@ -826,6 +827,7 @@ export default function App() {
         <SettingsModal
           onClose={() => setShowSettings(false)}
           ytdlpInstalled={ytdlpOk}
+          logs={logs}
         />
       )}
     </div>

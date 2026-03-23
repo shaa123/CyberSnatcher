@@ -2,18 +2,20 @@ import { useState } from "react";
 import { useDownloadStore } from "../../stores/downloadStore";
 import GeneralTab from "./GeneralTab";
 import SupportedSitesTab from "./SupportedSitesTab";
+import LogsTab from "./LogsTab";
 
 interface SettingsModalProps {
   onClose: () => void;
   ytdlpInstalled: boolean;
+  logs: string[];
 }
 
-export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModalProps) {
+export default function SettingsModal({ onClose, ytdlpInstalled, logs }: SettingsModalProps) {
   const downloadFolder = useDownloadStore((s) => s.downloadFolder);
   const setDownloadFolder = useDownloadStore((s) => s.setDownloadFolder);
 
   const [folderInput, setFolderInput] = useState(downloadFolder);
-  const [activeTab, setActiveTab] = useState<"general" | "sites">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "sites" | "logs">("general");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -51,6 +53,16 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
           >
             Supported Sites
           </button>
+          <button
+            onClick={() => setActiveTab("logs")}
+            className={`px-4 py-2.5 text-[15px] font-medium transition-colors ${
+              activeTab === "logs"
+                ? "text-cyber-primary border-b-2 border-cyber-primary"
+                : "text-cyber-text-tertiary hover:text-cyber-text-secondary"
+            }`}
+          >
+            Logs
+          </button>
         </div>
 
         {/* Content */}
@@ -62,8 +74,10 @@ export default function SettingsModal({ onClose, ytdlpInstalled }: SettingsModal
               setFolderInput={setFolderInput}
               onSaveFolder={() => setDownloadFolder(folderInput)}
             />
-          ) : (
+          ) : activeTab === "sites" ? (
             <SupportedSitesTab />
+          ) : (
+            <LogsTab logs={logs} />
           )}
         </div>
 
