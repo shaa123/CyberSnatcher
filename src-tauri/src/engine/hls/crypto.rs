@@ -25,6 +25,7 @@ impl HlsDecryptor {
         let iv = default_iv.map(|v| {
             let mut arr = [0u8; 16];
             let len = v.len().min(16);
+            // Right-align the IV bytes (big-endian) per RFC 8216 §5.2
             arr[16 - len..].copy_from_slice(&v[..len]);
             arr
         });
@@ -36,11 +37,14 @@ impl HlsDecryptor {
         let iv = if let Some(seg_iv) = segment_iv {
             let mut arr = [0u8; 16];
             let len = seg_iv.len().min(16);
+            // Right-align per RFC 8216 §5.2
             arr[16 - len..].copy_from_slice(&seg_iv[..len]);
             arr
         } else if let Some(default) = self.default_iv {
             default
         } else {
+            // Per RFC 8216 §4.3.2.4: use segment sequence number as IV
+            // The sequence number is placed as a big-endian 128-bit integer
             sequence_to_iv(sequence)
         };
 
@@ -55,6 +59,8 @@ impl HlsDecryptor {
     }
 }
 
+/// Convert segment sequence number to a 16-byte big-endian IV.
+/// Per RFC 8216 §4.3.2.4, the sequence number fills the lower 8 bytes.
 fn sequence_to_iv(seq: u64) -> [u8; 16] {
     let mut iv = [0u8; 16];
     iv[8..16].copy_from_slice(&seq.to_be_bytes());

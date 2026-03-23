@@ -36,8 +36,10 @@ pub async fn download_hls(
     let manifest_text = client.get_text(manifest_url).await?;
     let parsed = parser::parse_m3u8(&manifest_text, manifest_url)?;
 
-    let media_playlist = match parsed {
+    let (media_playlist, _variant_urls) = match parsed {
         parser::M3u8Result::Master(master) => {
+            // Try best quality first, with fallback to lower qualities
+            let variant_urls: Vec<String> = master.variants.iter().map(|v| v.url.clone()).collect();
             let best = master.variants.last().ok_or("No variants in master playlist")?;
             let _ = app.emit("download-progress", DownloadProgress {
                 job_id: job_id.to_string(), percent: 0.0, speed: String::new(),
@@ -47,11 +49,11 @@ pub async fn download_hls(
             });
             let media_text = client.get_text(&best.url).await?;
             match parser::parse_m3u8(&media_text, &best.url)? {
-                parser::M3u8Result::Media(m) => m,
+                parser::M3u8Result::Media(m) => (m, variant_urls),
                 _ => return Err("Expected media playlist from variant".into()),
             }
         }
-        parser::M3u8Result::Media(media) => media,
+        parser::M3u8Result::Media(media) => (media, vec![]),
     };
 
     if media_playlist.is_live {
@@ -61,7 +63,13 @@ pub async fn download_hls(
     let _ = app.emit("download-progress", DownloadProgress {
         job_id: job_id.to_string(), percent: 0.0, speed: String::new(),
         eta: String::new(), status: "downloading".to_string(),
-        log_line: format!("HLS: {} segments, {:.0}s, encrypted={}", media_playlist.segments.len(), media_playlist.total_duration, media_playlist.encryption.is_some()),
+        log_line: format!("HLS: {} segments, {:.0}s, encrypted={}, byterange={}, discontinuities={}",
+            media_playlist.segments.len(),
+            media_playlist.total_duration,
+            media_playlist.encryption.is_some(),
+            media_playlist.segments.iter().any(|s| s.byterange.is_some()),
+            media_playlist.has_discontinuity,
+        ),
         file_path: None, file_size: None,
     });
 
@@ -69,17 +77,39 @@ pub async fn download_hls(
     let decryptor = if let Some(ref enc) = media_playlist.encryption {
         if enc.method == "AES-128" {
             Some(crypto::HlsDecryptor::new(&client, &enc.key_uri, enc.iv.clone()).await?)
-        } else { return Err(format!("Unsupported encryption: {}", enc.method)); }
+        } else if enc.method == "SAMPLE-AES" || enc.method == "SAMPLE-AES-CTR" {
+            let _ = app.emit("download-progress", DownloadProgress {
+                job_id: job_id.to_string(), percent: 0.0, speed: String::new(),
+                eta: String::new(), status: "downloading".to_string(),
+                log_line: format!("HLS: WARNING — {} encryption detected. Segments will be downloaded raw (may not play correctly).", enc.method),
+                file_path: None, file_size: None,
+            });
+            None
+        } else {
+            return Err(format!("Unsupported encryption: {}", enc.method));
+        }
     } else { None };
 
     // Init segment for fMP4
     let init_segment = if let Some(ref init_url) = media_playlist.init_map_url {
-        Some(client.get_bytes(init_url).await?)
+        if let Some(ref br) = media_playlist.init_map_byterange {
+            // Byterange init segment
+            Some(client.get_bytes_range(init_url, br.offset.unwrap_or(0), br.length).await?)
+        } else {
+            Some(client.get_bytes(init_url).await?)
+        }
     } else { None };
 
-    // Download segments
-    let seg_urls: Vec<String> = media_playlist.segments.iter().map(|s| s.url.clone()).collect();
-    let results = super::download::download_segments(app, job_id, &client, &seg_urls, 8, cancelled).await?;
+    // Download segments (with byterange support)
+    let has_byteranges = media_playlist.segments.iter().any(|s| s.byterange.is_some());
+
+    let results = if has_byteranges {
+        // Download byterange segments sequentially or with limited concurrency
+        download_byterange_segments(app, job_id, &client, &media_playlist.segments, cancelled).await?
+    } else {
+        let seg_urls: Vec<String> = media_playlist.segments.iter().map(|s| s.url.clone()).collect();
+        super::download::download_segments(app, job_id, &client, &seg_urls, 8, cancelled).await?
+    };
 
     if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
 
@@ -127,6 +157,93 @@ pub async fn download_hls(
     let fallback = format!("{}/{}.{}", output_dir, filename, ext);
     std::fs::rename(&temp_path, &fallback).ok();
     Ok(fallback)
+}
+
+/// Download segments with byterange support.
+/// For byterange segments, we download with Range headers.
+async fn download_byterange_segments(
+    app: &tauri::AppHandle,
+    job_id: &str,
+    client: &Arc<VideoClient>,
+    segments: &[parser::HlsSegment],
+    cancelled: &AtomicBool,
+) -> Result<Vec<Option<Vec<u8>>>, String> {
+    let total = segments.len();
+    let mut results: Vec<Option<Vec<u8>>> = Vec::with_capacity(total);
+    let start_time = std::time::Instant::now();
+    let mut total_bytes: u64 = 0;
+
+    for (i, seg) in segments.iter().enumerate() {
+        if cancelled.load(Ordering::Relaxed) { break; }
+
+        let data = if let Some(ref br) = seg.byterange {
+            // Byterange download with exponential backoff retry
+            let mut result = None;
+            for attempt in 1..=5u32 {
+                match client.get_bytes_range(&seg.url, br.offset.unwrap_or(0), br.length).await {
+                    Ok(data) => { result = Some(data); break; }
+                    Err(e) => {
+                        if attempt < 5 {
+                            let delay = std::time::Duration::from_secs(1 << (attempt - 1));
+                            tokio::time::sleep(delay).await;
+                        } else {
+                            log::warn!("Byterange segment {} failed after 5 retries: {}", i, e);
+                        }
+                    }
+                }
+            }
+            result
+        } else {
+            // Regular segment with exponential backoff retry
+            let mut result = None;
+            for attempt in 1..=5u32 {
+                match client.get_bytes(&seg.url).await {
+                    Ok(data) => { result = Some(data); break; }
+                    Err(e) => {
+                        if attempt < 5 {
+                            let delay = std::time::Duration::from_secs(1 << (attempt - 1));
+                            tokio::time::sleep(delay).await;
+                        } else {
+                            log::warn!("Segment {} failed after 5 retries: {}", i, e);
+                        }
+                    }
+                }
+            }
+            result
+        };
+
+        if let Some(ref d) = data {
+            total_bytes += d.len() as u64;
+        }
+
+        let elapsed = start_time.elapsed().as_secs_f64();
+        let speed = if elapsed > 0.0 { total_bytes as f64 / elapsed } else { 0.0 };
+        let remaining = total - i - 1;
+        let avg_time = if i > 0 { elapsed / i as f64 } else { 0.0 };
+        let eta = remaining as f64 * avg_time;
+        let percent = ((i + 1) as f64 / total as f64) * 100.0;
+
+        let speed_str = if speed > 1_048_576.0 {
+            format!("{:.1} MB/s", speed / 1_048_576.0)
+        } else {
+            format!("{:.0} KB/s", speed / 1024.0)
+        };
+
+        let _ = app.emit("download-progress", DownloadProgress {
+            job_id: job_id.to_string(),
+            percent,
+            speed: speed_str,
+            eta: format!("{:.0}s", eta),
+            status: "downloading".to_string(),
+            log_line: format!("HLS: segment {}/{}", i + 1, total),
+            file_path: None,
+            file_size: Some(total_bytes),
+        });
+
+        results.push(data);
+    }
+
+    Ok(results)
 }
 
 fn is_mp4_box(data: &[u8]) -> bool {

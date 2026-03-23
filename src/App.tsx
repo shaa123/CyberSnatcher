@@ -3,6 +3,8 @@ import { downloadDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar";
 import SettingsModal from "./components/Settings/SettingsModal";
+import BrowserView from "./components/Browser/BrowserView";
+import { useBrowserStore } from "./stores/browserStore";
 import { analyzeUrl, startDownload, cancelDownload, checkYtdlp, checkFfmpeg, showInFolder, openFile, convertFile, nativeDownload, updateYtdlp } from "./lib/tauri";
 import type { DownloadProgress, DownloadItem, ConversionPreset } from "./lib/types";
 
@@ -44,6 +46,7 @@ function formatToQuality(f: string, qualityIdx: number): string {
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
+  const activeTab = useBrowserStore((s) => s.activeTab);
 
   // ── All existing state (unchanged) ──
   const [url, setUrl] = useState("");
@@ -380,7 +383,11 @@ export default function App() {
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>
+      {/* ── Browser Tab ── */}
+      {activeTab === "browser" && <BrowserView />}
+
+      {/* ── Downloads Tab ── */}
+      <div style={{ flex: 1, overflowY: "auto", display: activeTab === "downloads" ? "flex" : "none", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>
           <div style={{ width: "100%", maxWidth: "700px" }}>
 
             {/* Header */}

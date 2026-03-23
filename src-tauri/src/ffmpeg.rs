@@ -253,6 +253,77 @@ pub fn run_ffmpeg_sync(
     }
 }
 
+/// Mux separate video and audio files into a single MP4.
+/// Used by DASH engine to combine video+audio tracks.
+pub fn run_ffmpeg_mux(
+    app: &AppHandle,
+    job_id: &str,
+    video_path: &str,
+    audio_path: &str,
+    output_path: &str,
+    cancelled: &Arc<AtomicBool>,
+) -> Result<String, String> {
+    let bin = resolve_ffmpeg_path(app)?;
+
+    let args = vec![
+        "-i", video_path,
+        "-i", audio_path,
+        "-c", "copy",
+        "-movflags", "+faststart",
+        "-y",
+        output_path,
+    ];
+
+    emit_convert_progress(app, job_id, 90.0, "Muxing video + audio...");
+
+    let mut child = Command::new(&bin)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start ffmpeg mux: {}", e))?;
+
+    // Simple wait with cancellation check
+    loop {
+        if cancelled.load(Ordering::Relaxed) {
+            #[cfg(target_os = "windows")]
+            { let _ = Command::new("taskkill").args(["/PID", &child.id().to_string(), "/T", "/F"]).output(); }
+            #[cfg(not(target_os = "windows"))]
+            { let _ = Command::new("kill").args(["-9", &child.id().to_string()]).output(); }
+            std::fs::remove_file(output_path).ok();
+            return Err("Cancelled".to_string());
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if status.success() {
+                    emit_convert_progress(app, job_id, 100.0, "Mux complete");
+                    return Ok(output_path.to_string());
+                } else {
+                    let stderr = child.stderr.take()
+                        .map(|s| {
+                            let mut buf = String::new();
+                            BufReader::new(s).lines().for_each(|l| {
+                                if let Ok(l) = l { buf.push_str(&l); buf.push('\n'); }
+                            });
+                            buf
+                        })
+                        .unwrap_or_default();
+                    std::fs::remove_file(output_path).ok();
+                    return Err(format!("ffmpeg mux failed: {}", stderr.chars().take(200).collect::<String>()));
+                }
+            }
+            Ok(None) => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => {
+                std::fs::remove_file(output_path).ok();
+                return Err(format!("ffmpeg mux error: {}", e));
+            }
+        }
+    }
+}
+
 fn emit_convert_progress(app: &AppHandle, job_id: &str, percent: f64, log_line: &str) {
     let _ = app.emit("download-progress", DownloadProgress {
         job_id: job_id.to_string(),

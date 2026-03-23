@@ -30,10 +30,10 @@ pub async fn download_url(
         return hls::download_hls(app, job_id, url, page_url, cookies, output_dir, filename, cancelled).await;
     }
 
-    // 2. DASH streams — fall through to yt-dlp for now
+    // 2. DASH streams — now uses native engine
     if url_ext == ".mpd" {
-        log::info!("DASH URL detected, routing to yt-dlp: {}", url);
-        return Err("USE_YTDLP".into());
+        log::info!("Routing to DASH engine: {}", url);
+        return dash::download_dash(app, job_id, url, page_url, cookies, output_dir, filename, cancelled).await;
     }
 
     // 3. Direct video files

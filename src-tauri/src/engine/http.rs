@@ -63,6 +63,22 @@ impl VideoClient {
         resp.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
     }
 
+    /// Download bytes with a Range header for byterange requests.
+    pub async fn get_bytes_range(&self, url: &str, offset: u64, length: u64) -> Result<Vec<u8>, String> {
+        let end = offset + length - 1;
+        let mut req = self.client.get(url);
+        for (k, v) in &self.default_headers {
+            req = req.header(k.as_str(), v.as_str());
+        }
+        req = req.header("Range", format!("bytes={}-{}", offset, end));
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        let status = resp.status();
+        if !status.is_success() && status.as_u16() != 206 {
+            return Err(format!("HTTP {} for range request", status));
+        }
+        resp.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
+    }
+
     pub async fn head_content_length(&self, url: &str) -> Option<u64> {
         let mut req = self.client.head(url);
         for (k, v) in &self.default_headers {

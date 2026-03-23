@@ -18,9 +18,11 @@ pub struct HlsMediaPlaylist {
     pub segments: Vec<HlsSegment>,
     pub encryption: Option<HlsEncryption>,
     pub init_map_url: Option<String>,
+    pub init_map_byterange: Option<ByteRange>,
     pub total_duration: f64,
     pub is_live: bool,
     pub media_sequence: u64,
+    pub has_discontinuity: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +31,14 @@ pub struct HlsSegment {
     pub duration: f64,
     pub sequence: u64,
     pub iv: Option<Vec<u8>>,
+    pub byterange: Option<ByteRange>,
+    pub is_discontinuity: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ByteRange {
+    pub length: u64,
+    pub offset: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,10 +95,15 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
     let mut encryption: Option<HlsEncryption> = None;
     let mut current_key: Option<HlsEncryption> = None;
     let mut init_map_url: Option<String> = None;
+    let mut init_map_byterange: Option<ByteRange> = None;
     let mut media_sequence: u64 = 0;
     let mut seg_idx: u64 = 0;
     let mut total_duration: f64 = 0.0;
     let mut current_duration: f64 = 0.0;
+    let mut current_byterange: Option<ByteRange> = None;
+    let mut has_discontinuity = false;
+    let mut next_is_discontinuity = false;
+    let mut last_byterange_offset: u64 = 0;
 
     for line in lines {
         if line.contains("#EXT-X-MEDIA-SEQUENCE") {
@@ -99,13 +114,18 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
     }
 
     for line in lines {
+        // #EXT-X-MAP (initialization segment for fMP4)
         if line.contains("#EXT-X-MAP") {
             if let Some(uri) = parse_attr(line, "URI") {
                 init_map_url = Some(resolve_url(base_url, &uri));
             }
+            if let Some(br) = parse_attr(line, "BYTERANGE") {
+                init_map_byterange = parse_byterange_value(&br, 0);
+            }
             continue;
         }
 
+        // #EXT-X-KEY
         if line.contains("#EXT-X-KEY") {
             let method = parse_attr(line, "METHOD").unwrap_or_default();
             if method == "NONE" {
@@ -116,10 +136,34 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
                 let key = HlsEncryption { method, key_uri: resolve_url(base_url, &uri), iv: iv.clone() };
                 if encryption.is_none() { encryption = Some(key.clone()); }
                 current_key = Some(key);
+            } else if method == "SAMPLE-AES" || method == "SAMPLE-AES-CTR" {
+                // Warn: unsupported encryption, but continue parsing
+                log::warn!("HLS: Unsupported encryption method: {}. Segments may fail to decrypt.", method);
+                let uri = parse_attr(line, "URI").unwrap_or_default();
+                let iv = parse_attr(line, "IV").and_then(|h| parse_hex_iv(&h));
+                let key = HlsEncryption { method, key_uri: resolve_url(base_url, &uri), iv };
+                if encryption.is_none() { encryption = Some(key.clone()); }
+                current_key = Some(key);
             }
             continue;
         }
 
+        // #EXT-X-DISCONTINUITY
+        if line.contains("#EXT-X-DISCONTINUITY") {
+            has_discontinuity = true;
+            next_is_discontinuity = true;
+            continue;
+        }
+
+        // #EXT-X-BYTERANGE
+        if line.starts_with("#EXT-X-BYTERANGE") {
+            if let Some(val) = line.split(':').last() {
+                current_byterange = parse_byterange_value(val.trim(), last_byterange_offset);
+            }
+            continue;
+        }
+
+        // #EXTINF
         if line.starts_with("#EXTINF") {
             if let Some(dur_str) = line.split(':').last() {
                 current_duration = dur_str.trim_end_matches(',').parse::<f64>().unwrap_or(0.0);
@@ -130,26 +174,56 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
 
         if line.starts_with('#') { continue; }
 
+        // Segment URL
         let seg_url = resolve_url(base_url, line);
+
+        // Track byterange offsets for consecutive ranges on the same URL
+        if let Some(ref br) = current_byterange {
+            let offset = br.offset.unwrap_or(0);
+            last_byterange_offset = offset + br.length;
+        }
+
         segments.push(HlsSegment {
             url: seg_url,
             duration: current_duration,
             sequence: media_sequence + seg_idx,
             iv: current_key.as_ref().and_then(|k| k.iv.clone()),
+            byterange: current_byterange.take(),
+            is_discontinuity: next_is_discontinuity,
         });
         seg_idx += 1;
         current_duration = 0.0;
+        next_is_discontinuity = false;
     }
 
     let full_text = lines.join("\n");
     // Per HLS spec (RFC 8216 §4.3.3.4): absence of #EXT-X-ENDLIST is the
-    // authoritative signal that a playlist is live.  Duration/segment-count
-    // heuristics cause false positives (short VODs) and false negatives
-    // (long-running live streams), so they are intentionally omitted.
+    // authoritative signal that a playlist is live.
     let is_live = !full_text.contains("#EXT-X-ENDLIST")
         && !full_text.contains("#EXT-X-PLAYLIST-TYPE:VOD");
 
-    Ok(HlsMediaPlaylist { segments, encryption, init_map_url, total_duration, is_live, media_sequence })
+    Ok(HlsMediaPlaylist {
+        segments,
+        encryption,
+        init_map_url,
+        init_map_byterange,
+        total_duration,
+        is_live,
+        media_sequence,
+        has_discontinuity,
+    })
+}
+
+/// Parse a byterange value like "1024@0" or "1024" into ByteRange
+fn parse_byterange_value(val: &str, default_offset: u64) -> Option<ByteRange> {
+    let parts: Vec<&str> = val.split('@').collect();
+    let length = parts[0].parse::<u64>().ok()?;
+    let offset = if parts.len() > 1 {
+        parts[1].parse::<u64>().ok()
+    } else {
+        Some(default_offset)
+    };
+    Some(ByteRange { length, offset })
 }
 
 fn parse_attr(tag: &str, name: &str) -> Option<String> {

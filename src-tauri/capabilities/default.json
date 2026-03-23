@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": ["main", "browser-webview"],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -12,6 +12,9 @@
     "core:window:allow-close",
     "core:window:allow-is-maximized",
     "core:window:allow-set-focus",
+    "core:webview:default",
+    "core:webview:allow-create-webview",
+    "core:webview:allow-create-webview-window",
     "core:path:default",
     "shell:default",
     "shell:allow-open",
