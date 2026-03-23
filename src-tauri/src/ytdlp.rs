@@ -31,8 +31,8 @@ pub fn resolve_ytdlp_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
 
     // 4. Fall back to system PATH
-    let cmd = if cfg!(windows) { obfstr!("where") } else { obfstr!("which") };
-    let bin = if cfg!(windows) { obfstr!("yt-dlp.exe") } else { obfstr!("yt-dlp") };
+    let cmd = if cfg!(windows) { "where" } else { "which" };
+    let bin = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
     if let Ok(output) = Command::new(cmd).arg(bin).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();

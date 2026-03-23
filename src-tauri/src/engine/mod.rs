@@ -40,8 +40,8 @@ pub async fn download_url(
 
     // 3. Direct video files
     let video_exts = [
-        obfstr!(".mp4"), obfstr!(".webm"), obfstr!(".mkv"), obfstr!(".avi"),
-        obfstr!(".mov"), obfstr!(".flv"), obfstr!(".m4v"), obfstr!(".ts"),
+        ".mp4", ".webm", ".mkv", ".avi",
+        ".mov", ".flv", ".m4v", ".ts",
     ];
     for ext in &video_exts {
         if url_ext == *ext {

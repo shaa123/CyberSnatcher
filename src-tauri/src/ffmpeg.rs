@@ -30,8 +30,8 @@ pub fn resolve_ffmpeg_path(app: &AppHandle) -> Result<std::path::PathBuf, String
     if dev.exists() { return Ok(dev); }
 
     // 4. System PATH
-    let cmd = if cfg!(windows) { obfstr!("where") } else { obfstr!("which") };
-    let bin = if cfg!(windows) { obfstr!("ffmpeg.exe") } else { obfstr!("ffmpeg") };
+    let cmd = if cfg!(windows) { "where" } else { "which" };
+    let bin = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
     if let Ok(output) = Command::new(cmd).arg(bin).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -267,11 +267,11 @@ pub fn run_ffmpeg_mux(
     let bin = resolve_ffmpeg_path(app)?;
 
     let args = vec![
-        obfstr!("-i"), video_path,
-        obfstr!("-i"), audio_path,
-        obfstr!("-c"), obfstr!("copy"),
-        obfstr!("-movflags"), obfstr!("+faststart"),
-        obfstr!("-y"),
+        "-i", video_path,
+        "-i", audio_path,
+        "-c", "copy",
+        "-movflags", "+faststart",
+        "-y",
         output_path,
     ];
 
