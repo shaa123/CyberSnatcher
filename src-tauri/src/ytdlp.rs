@@ -30,6 +30,19 @@ pub fn resolve_ytdlp_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         return Ok(dev_path);
     }
 
+    // 3b. Also check for a plain "yt-dlp" binary in the binaries/ folders
+    let plain_name = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let plain = resource_dir.join(obfstr!("binaries")).join(plain_name);
+        if plain.exists() {
+            return Ok(plain);
+        }
+    }
+    let dev_plain = PathBuf::from(obfstr!("binaries")).join(plain_name);
+    if dev_plain.exists() {
+        return Ok(dev_plain);
+    }
+
     // 4. Fall back to system PATH
     let cmd = if cfg!(windows) { "where" } else { "which" };
     let bin = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };

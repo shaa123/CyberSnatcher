@@ -38,7 +38,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": []
+    "externalBin": [],
+    "resources": {
+      "binaries/*": "binaries/"
+    }
   },
   "plugins": {
     "shell": {
