@@ -40,6 +40,7 @@ export default function UrlInput() {
       eta: "—",
       outputDir: downloadFolder,
       quality: "best",
+      formatType: "video",
       logs: [],
       created_at: Date.now(),
     });
@@ -59,7 +60,7 @@ export default function UrlInput() {
 
       // Start the actual download
       const outDir = downloadFolder || "";
-      await startDownload(jobId, trimmed, outDir, "best");
+      await startDownload(jobId, trimmed, title, outDir, "best", "video");
     } catch (e) {
       updateItem(jobId, {
         title: url,

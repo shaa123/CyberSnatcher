@@ -18,15 +18,12 @@ const mockLogs = [
 export default function DownloadView({ item }: DownloadViewProps) {
   const [showLogs, setShowLogs] = useState(true);
   const statusLabel = getStatusLabel(item.status);
-  const isActive = statusLabel === "Downloading" || statusLabel === "Converting";
+  const isActive = statusLabel === "Downloading" || statusLabel === "Analyzing";
   const isDone = statusLabel === "Done";
   const isFailed = statusLabel === "Failed";
-  const isPaused = statusLabel === "Paused";
+  const isPaused = false;
 
-  const failedError =
-    typeof item.status === "object" && "Failed" in item.status
-      ? item.status.Failed.error
-      : null;
+  const failedError = item.status === "error" ? (item.logs[item.logs.length - 1] ?? null) : null;
 
   return (
     <div className="flex-1 flex flex-col p-5 overflow-y-auto">
@@ -58,10 +55,10 @@ export default function DownloadView({ item }: DownloadViewProps) {
       <div className="mt-4 mb-4">
         <StatsGrid
           speed={item.speed}
-          downloaded={`${Math.round((parseFloat(item.file_size) || 0) * item.progress / 100)} MB`}
+          downloaded={`${Math.round((item.fileSize || 0) * item.progress / 100)} MB`}
           eta={item.eta}
-          fileSize={item.file_size}
-          format={item.format}
+          fileSize={item.fileSize ? `${item.fileSize} MB` : "—"}
+          format={item.formatType || "—"}
         />
       </div>
 

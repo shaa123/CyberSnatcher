@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useDownloadStore } from "../stores/downloadStore";
-import type { DownloadProgress } from "../lib/types";
+import type { DownloadProgress, DownloadItem } from "../lib/types";
 
 export function useDownloadEvents() {
   const updateItem = useDownloadStore((s) => s.updateItem);
@@ -30,6 +30,28 @@ export function useDownloadEvents() {
 
     return () => { unlisten.then((fn) => fn()); };
   }, [updateItem]);
+}
+
+export function getStatusLabel(status: DownloadItem["status"]): string {
+  switch (status) {
+    case "analyzing": return "Analyzing";
+    case "queued": return "Queued";
+    case "downloading": return "Downloading";
+    case "complete": return "Done";
+    case "error": return "Failed";
+    case "cancelled": return "Cancelled";
+  }
+}
+
+export function getStatusColor(item: DownloadItem): string {
+  switch (item.status) {
+    case "analyzing": return "text-cyber-info bg-cyber-info/10";
+    case "queued": return "text-cyber-text-tertiary bg-cyber-card";
+    case "downloading": return "text-cyber-primary bg-cyber-primary/10";
+    case "complete": return "text-cyber-success bg-cyber-success/10";
+    case "error": return "text-cyber-error bg-cyber-error/10";
+    case "cancelled": return "text-cyber-text-tertiary bg-cyber-card";
+  }
 }
 
 export function useDownloads() {

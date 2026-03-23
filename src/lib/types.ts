@@ -14,7 +14,7 @@ export interface DownloadItem {
   url: string;
   title: string;
   site_name: string;
-  status: "queued" | "downloading" | "complete" | "error" | "cancelled";
+  status: "queued" | "analyzing" | "downloading" | "complete" | "error" | "cancelled";
   progress: number;
   speed: string;
   eta: string;

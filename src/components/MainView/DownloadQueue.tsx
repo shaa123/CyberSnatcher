@@ -7,6 +7,7 @@ import type { DownloadItem } from "../../lib/types";
 function statusBadge(status: DownloadItem["status"]) {
   switch (status) {
     case "analyzing": return { text: "Analyzing", cls: "text-cyber-info bg-cyber-info/10" };
+    case "queued": return { text: "Queued", cls: "text-cyber-text-tertiary bg-cyber-card" };
     case "downloading": return { text: "Downloading", cls: "text-cyber-primary bg-cyber-primary/10 status-downloading" };
     case "complete": return { text: "Done", cls: "text-cyber-success bg-cyber-success/10" };
     case "error": return { text: "Failed", cls: "text-cyber-error bg-cyber-error/10" };
