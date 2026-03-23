@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use crate::types::{detect_site, detect_type, QualityOption, UrlAnalysis};
 use crate::ytdlp::resolve_ytdlp_path;
 use std::process::Command;
@@ -11,9 +12,9 @@ pub async fn check_ytdlp(app: tauri::AppHandle) -> Result<bool, String> {
 pub async fn get_ytdlp_version(app: tauri::AppHandle) -> Result<String, String> {
     let bin = resolve_ytdlp_path(&app)?;
     let output = Command::new(&bin)
-        .arg("--version")
+        .arg(obfstr!("--version"))
         .output()
-        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+        .map_err(|e| format!("{}{}", obfstr!("Failed to run yt-dlp: "), e))?;
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
@@ -21,21 +22,21 @@ pub async fn get_ytdlp_version(app: tauri::AppHandle) -> Result<String, String> 
 pub async fn update_ytdlp(app: tauri::AppHandle) -> Result<String, String> {
     let bin = resolve_ytdlp_path(&app)?;
     let output = Command::new(&bin)
-        .args(["--update"])
+        .args([obfstr!("--update")])
         .output()
-        .map_err(|e| format!("Failed to run yt-dlp --update: {}", e))?;
+        .map_err(|e| format!("{}{}", obfstr!("Failed to run yt-dlp --update: "), e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let combined = format!("{}{}", stdout.trim(), stderr.trim());
 
-    if combined.contains("Updated yt-dlp to") || combined.contains("Updating to") {
+    if combined.contains(obfstr!("Updated yt-dlp to")) || combined.contains(obfstr!("Updating to")) {
         Ok(combined)
-    } else if combined.contains("up to date") || combined.contains("is up-to-date") {
-        Ok("Already up to date.".to_string())
+    } else if combined.contains(obfstr!("up to date")) || combined.contains(obfstr!("is up-to-date")) {
+        Ok(obfstr!("Already up to date.").to_string())
     } else if !output.status.success() {
         // --update may fail if installed via package manager, that's okay
-        Ok("Update not available (installed via package manager?).".to_string())
+        Ok(obfstr!("Update not available (installed via package manager?).").to_string())
     } else {
         Ok(combined)
     }
@@ -46,29 +47,29 @@ pub async fn analyze_url(app: tauri::AppHandle, url: String) -> Result<UrlAnalys
     let bin = resolve_ytdlp_path(&app)?;
 
     let output = Command::new(&bin)
-        .args(["--dump-json", "--no-download", "--no-warnings", "--no-playlist", &url])
+        .args([obfstr!("--dump-json"), obfstr!("--no-download"), obfstr!("--no-warnings"), obfstr!("--no-playlist"), &url])
         .output()
-        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+        .map_err(|e| format!("{}{}", obfstr!("Failed to run yt-dlp: "), e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         // Friendly error messages
-        let err_msg = if stderr.contains("is not a valid URL") || stderr.contains("Unsupported URL") {
-            "This URL isn't supported. Try a direct video link from YouTube, Twitter, TikTok, etc.".to_string()
-        } else if stderr.contains("HTTP Error 403") || stderr.contains("Forbidden") {
-            "Access denied — the site may require login or have geo-restrictions.".to_string()
-        } else if stderr.contains("HTTP Error 404") || stderr.contains("not found") {
-            "Video not found — the link may be broken or the video was deleted.".to_string()
-        } else if stderr.contains("urlopen error") || stderr.contains("Connection") {
-            "Connection failed — check your internet connection.".to_string()
+        let err_msg = if stderr.contains(obfstr!("is not a valid URL")) || stderr.contains(obfstr!("Unsupported URL")) {
+            obfstr!("This URL isn't supported. Try a direct video link from YouTube, Twitter, TikTok, etc.").to_string()
+        } else if stderr.contains(obfstr!("HTTP Error 403")) || stderr.contains(obfstr!("Forbidden")) {
+            obfstr!("Access denied \u{2014} the site may require login or have geo-restrictions.").to_string()
+        } else if stderr.contains(obfstr!("HTTP Error 404")) || stderr.contains(obfstr!("not found")) {
+            obfstr!("Video not found \u{2014} the link may be broken or the video was deleted.").to_string()
+        } else if stderr.contains(obfstr!("urlopen error")) || stderr.contains(obfstr!("Connection")) {
+            obfstr!("Connection failed \u{2014} check your internet connection.").to_string()
         } else {
-            format!("yt-dlp error: {}", stderr.lines().last().unwrap_or("Unknown error"))
+            format!("{}{}", obfstr!("yt-dlp error: "), stderr.lines().last().unwrap_or("Unknown error"))
         };
         return Err(err_msg);
     }
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Failed to parse yt-dlp output: {}", e))?;
+        .map_err(|e| format!("{}{}", obfstr!("Failed to parse yt-dlp output: "), e))?;
 
     let title = json["title"].as_str().map(String::from);
     let thumbnail = json["thumbnail"].as_str().map(String::from);
@@ -131,7 +132,7 @@ fn extract_qualities(json: &serde_json::Value) -> Vec<QualityOption> {
             else if vcodec == "none" && acodec != "none" && !has_audio && tbr > 0.0 {
                 has_audio = true;
                 qualities.push(QualityOption {
-                    label: format!("Audio {:.0}kbps", tbr),
+                    label: format!("{}{:.0}{}", obfstr!("Audio "), tbr, obfstr!("kbps")),
                     format_id: format_id.to_string(),
                     file_size: filesize,
                     ext: ext.to_string(),

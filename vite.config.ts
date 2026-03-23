@@ -1,10 +1,17 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import obfuscator from "rollup-obfuscator";
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [
+    react(),
+    !host && obfuscator({
+      controlFlowFlattening: true,
+      stringArray: true,
+    }),
+  ].filter(Boolean),
   clearScreen: false,
   server: {
     port: 1420,

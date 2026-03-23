@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use crate::ffmpeg::{resolve_ffmpeg_path, run_ffmpeg_sync, ConversionPreset};
 use crate::types::DownloadProgress;
 use std::sync::atomic::AtomicBool;
@@ -46,8 +47,8 @@ pub async fn convert_file(
                     percent: 100.0,
                     speed: String::new(),
                     eta: String::new(),
-                    status: "complete".to_string(),
-                    log_line: format!("Conversion complete: {}", path),
+                    status: obfstr!("complete").to_string(),
+                    log_line: format!("{}{}", obfstr!("Conversion complete: "), path),
                     file_path: Some(path.clone()),
                     file_size: size,
                 });
@@ -59,8 +60,8 @@ pub async fn convert_file(
                     percent: -1.0,
                     speed: String::new(),
                     eta: String::new(),
-                    status: "error".to_string(),
-                    log_line: format!("Conversion failed: {}", e),
+                    status: obfstr!("error").to_string(),
+                    log_line: format!("{}{}", obfstr!("Conversion failed: "), e),
                     file_path: None,
                     file_size: None,
                 });
@@ -69,7 +70,7 @@ pub async fn convert_file(
         }
     });
 
-    handle.join().map_err(|_| "Thread panicked".to_string())?
+    handle.join().map_err(|_| obfstr!("Thread panicked").to_string())?
 }
 
 #[tauri::command]

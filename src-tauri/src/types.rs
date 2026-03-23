@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicBool, Arc, Mutex};
@@ -56,8 +57,8 @@ impl Default for AppSettings {
                 .to_string_lossy()
                 .to_string(),
             max_concurrent: 3,
-            preferred_quality: "1080p".to_string(),
-            preferred_format: "mp4".to_string(),
+            preferred_quality: obfstr!("1080p").to_string(),
+            preferred_format: obfstr!("mp4").to_string(),
             auto_convert: true,
             custom_folders: vec![],
         }
@@ -80,21 +81,21 @@ impl DownloadManager {
 }
 
 pub fn detect_site(url: &str) -> String {
-    if url.contains("youtube.com") || url.contains("youtu.be") { "YouTube".into() }
-    else if url.contains("tiktok.com") { "TikTok".into() }
-    else if url.contains("twitter.com") || url.contains("x.com") { "Twitter/X".into() }
-    else if url.contains("instagram.com") { "Instagram".into() }
-    else if url.contains("reddit.com") { "Reddit".into() }
-    else if url.contains(".m3u8") { "HLS Stream".into() }
-    else if url.contains(".mpd") { "DASH Stream".into() }
-    else { "Website".into() }
+    if url.contains(obfstr!("youtube.com")) || url.contains(obfstr!("youtu.be")) { obfstr!("YouTube").to_string() }
+    else if url.contains(obfstr!("tiktok.com")) { obfstr!("TikTok").to_string() }
+    else if url.contains(obfstr!("twitter.com")) || url.contains(obfstr!("x.com")) { obfstr!("Twitter/X").to_string() }
+    else if url.contains(obfstr!("instagram.com")) { obfstr!("Instagram").to_string() }
+    else if url.contains(obfstr!("reddit.com")) { obfstr!("Reddit").to_string() }
+    else if url.contains(obfstr!(".m3u8")) { obfstr!("HLS Stream").to_string() }
+    else if url.contains(obfstr!(".mpd")) { obfstr!("DASH Stream").to_string() }
+    else { obfstr!("Website").to_string() }
 }
 
 pub fn detect_type(url: &str) -> MediaType {
-    if url.contains("youtube.com") || url.contains("youtu.be") { MediaType::YouTube }
-    else if url.contains(".m3u8") { MediaType::HLS }
-    else if url.contains(".mpd") { MediaType::DASH }
-    else if url.ends_with(".mp4") || url.ends_with(".webm") || url.ends_with(".mkv") { MediaType::DirectVideo }
-    else if url.ends_with(".mp3") || url.ends_with(".m4a") { MediaType::DirectAudio }
+    if url.contains(obfstr!("youtube.com")) || url.contains(obfstr!("youtu.be")) { MediaType::YouTube }
+    else if url.contains(obfstr!(".m3u8")) { MediaType::HLS }
+    else if url.contains(obfstr!(".mpd")) { MediaType::DASH }
+    else if url.ends_with(obfstr!(".mp4")) || url.ends_with(obfstr!(".webm")) || url.ends_with(obfstr!(".mkv")) { MediaType::DirectVideo }
+    else if url.ends_with(obfstr!(".mp3")) || url.ends_with(obfstr!(".m4a")) { MediaType::DirectAudio }
     else { MediaType::Unknown }
 }

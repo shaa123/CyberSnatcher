@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -56,11 +57,11 @@ pub enum M3u8Result {
 pub fn parse_m3u8(content: &str, base_url: &str) -> Result<M3u8Result, String> {
     let lines: Vec<&str> = content.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
 
-    if !lines.first().map(|l| l.contains("#EXTM3U")).unwrap_or(false) {
-        return Err("Not a valid M3U8 playlist".into());
+    if !lines.first().map(|l| l.contains(obfstr!("#EXTM3U"))).unwrap_or(false) {
+        return Err(obfstr!("Not a valid M3U8 playlist").into());
     }
 
-    if lines.iter().any(|l| l.contains("#EXT-X-STREAM-INF")) {
+    if lines.iter().any(|l| l.contains(obfstr!("#EXT-X-STREAM-INF"))) {
         Ok(M3u8Result::Master(parse_master(&lines, base_url)?))
     } else {
         Ok(M3u8Result::Media(parse_media(&lines, base_url)?))
@@ -71,10 +72,10 @@ fn parse_master(lines: &[&str], base_url: &str) -> Result<HlsMasterPlaylist, Str
     let mut variants = vec![];
     let mut i = 0;
     while i < lines.len() {
-        if lines[i].contains("#EXT-X-STREAM-INF") {
+        if lines[i].contains(obfstr!("#EXT-X-STREAM-INF")) {
             let tag = lines[i];
-            let bandwidth = parse_attr(tag, "BANDWIDTH").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-            let resolution = parse_attr(tag, "RESOLUTION");
+            let bandwidth = parse_attr(tag, obfstr!("BANDWIDTH")).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+            let resolution = parse_attr(tag, obfstr!("RESOLUTION"));
             i += 1;
             while i < lines.len() && lines[i].starts_with('#') { i += 1; }
             if i < lines.len() {
@@ -106,7 +107,7 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
     let mut last_byterange_offset: u64 = 0;
 
     for line in lines {
-        if line.contains("#EXT-X-MEDIA-SEQUENCE") {
+        if line.contains(obfstr!("#EXT-X-MEDIA-SEQUENCE")) {
             if let Some(val) = line.split(':').last() {
                 media_sequence = val.trim().parse().unwrap_or(0);
             }
@@ -115,32 +116,32 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
 
     for line in lines {
         // #EXT-X-MAP (initialization segment for fMP4)
-        if line.contains("#EXT-X-MAP") {
-            if let Some(uri) = parse_attr(line, "URI") {
+        if line.contains(obfstr!("#EXT-X-MAP")) {
+            if let Some(uri) = parse_attr(line, obfstr!("URI")) {
                 init_map_url = Some(resolve_url(base_url, &uri));
             }
-            if let Some(br) = parse_attr(line, "BYTERANGE") {
+            if let Some(br) = parse_attr(line, obfstr!("BYTERANGE")) {
                 init_map_byterange = parse_byterange_value(&br, 0);
             }
             continue;
         }
 
         // #EXT-X-KEY
-        if line.contains("#EXT-X-KEY") {
-            let method = parse_attr(line, "METHOD").unwrap_or_default();
-            if method == "NONE" {
+        if line.contains(obfstr!("#EXT-X-KEY")) {
+            let method = parse_attr(line, obfstr!("METHOD")).unwrap_or_default();
+            if method == obfstr!("NONE") {
                 current_key = None;
-            } else if method == "AES-128" {
-                let uri = parse_attr(line, "URI").unwrap_or_default();
-                let iv = parse_attr(line, "IV").and_then(|h| parse_hex_iv(&h));
+            } else if method == obfstr!("AES-128") {
+                let uri = parse_attr(line, obfstr!("URI")).unwrap_or_default();
+                let iv = parse_attr(line, obfstr!("IV")).and_then(|h| parse_hex_iv(&h));
                 let key = HlsEncryption { method, key_uri: resolve_url(base_url, &uri), iv: iv.clone() };
                 if encryption.is_none() { encryption = Some(key.clone()); }
                 current_key = Some(key);
-            } else if method == "SAMPLE-AES" || method == "SAMPLE-AES-CTR" {
+            } else if method == obfstr!("SAMPLE-AES") || method == obfstr!("SAMPLE-AES-CTR") {
                 // Warn: unsupported encryption, but continue parsing
-                log::warn!("HLS: Unsupported encryption method: {}. Segments may fail to decrypt.", method);
-                let uri = parse_attr(line, "URI").unwrap_or_default();
-                let iv = parse_attr(line, "IV").and_then(|h| parse_hex_iv(&h));
+                log::warn!("{}{}{}", obfstr!("HLS: Unsupported encryption method: "), method, obfstr!(". Segments may fail to decrypt."));
+                let uri = parse_attr(line, obfstr!("URI")).unwrap_or_default();
+                let iv = parse_attr(line, obfstr!("IV")).and_then(|h| parse_hex_iv(&h));
                 let key = HlsEncryption { method, key_uri: resolve_url(base_url, &uri), iv };
                 if encryption.is_none() { encryption = Some(key.clone()); }
                 current_key = Some(key);
@@ -149,14 +150,14 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
         }
 
         // #EXT-X-DISCONTINUITY
-        if line.contains("#EXT-X-DISCONTINUITY") {
+        if line.contains(obfstr!("#EXT-X-DISCONTINUITY")) {
             has_discontinuity = true;
             next_is_discontinuity = true;
             continue;
         }
 
         // #EXT-X-BYTERANGE
-        if line.starts_with("#EXT-X-BYTERANGE") {
+        if line.starts_with(obfstr!("#EXT-X-BYTERANGE")) {
             if let Some(val) = line.split(':').last() {
                 current_byterange = parse_byterange_value(val.trim(), last_byterange_offset);
             }
@@ -164,7 +165,7 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
         }
 
         // #EXTINF
-        if line.starts_with("#EXTINF") {
+        if line.starts_with(obfstr!("#EXTINF")) {
             if let Some(dur_str) = line.split(':').last() {
                 current_duration = dur_str.trim_end_matches(',').parse::<f64>().unwrap_or(0.0);
                 total_duration += current_duration;
@@ -199,8 +200,8 @@ fn parse_media(lines: &[&str], base_url: &str) -> Result<HlsMediaPlaylist, Strin
     let full_text = lines.join("\n");
     // Per HLS spec (RFC 8216 §4.3.3.4): absence of #EXT-X-ENDLIST is the
     // authoritative signal that a playlist is live.
-    let is_live = !full_text.contains("#EXT-X-ENDLIST")
-        && !full_text.contains("#EXT-X-PLAYLIST-TYPE:VOD");
+    let is_live = !full_text.contains(obfstr!("#EXT-X-ENDLIST"))
+        && !full_text.contains(obfstr!("#EXT-X-PLAYLIST-TYPE:VOD"));
 
     Ok(HlsMediaPlaylist {
         segments,

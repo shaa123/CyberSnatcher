@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,7 +24,7 @@ pub async fn record_live(
     let start = std::time::Instant::now();
 
     let decryptor = if let Some(ref enc) = initial_playlist.encryption {
-        if enc.method == "AES-128" {
+        if enc.method == obfstr!("AES-128") {
             Some(super::crypto::HlsDecryptor::new(client, &enc.key_uri, enc.iv.clone()).await?)
         } else { None }
     } else { None };
@@ -89,8 +90,8 @@ pub async fn record_live(
                         percent: -1.0, // indeterminate for live
                         speed: speed_str,
                         eta: format!("{}:{:02}", elapsed / 60, elapsed % 60),
-                        status: "downloading".to_string(),
-                        log_line: format!("Live: {} segments, {:.1} MB", seg_count, total_bytes as f64 / 1_048_576.0),
+                        status: obfstr!("downloading").to_string(),
+                        log_line: format!("{}{}{}{}", obfstr!("Live: "), seg_count, obfstr!(" segments, "), format!("{:.1} MB", total_bytes as f64 / 1_048_576.0)),
                         file_path: None,
                         file_size: Some(total_bytes),
                     });
@@ -107,7 +108,7 @@ pub async fn record_live(
 
     if seg_count == 0 {
         std::fs::remove_file(&temp_path).ok();
-        return Err("No segments recorded".into());
+        return Err(obfstr!("No segments recorded").into());
     }
 
     // Remux with ffmpeg if available

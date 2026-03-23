@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use base64::Engine;
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -52,7 +53,7 @@ pub async fn start_recording(
     {
         let mut status = state.status.lock().map_err(|e| e.to_string())?;
         if matches!(*status, RecordingStatus::Recording) {
-            return Err("Already recording".into());
+            return Err(obfstr!("Already recording").into());
         }
         *status = RecordingStatus::Recording;
     }
@@ -65,7 +66,7 @@ pub async fn start_recording(
     // Prepare output path
     let download_dir = dirs::download_dir()
         .or_else(|| dirs::home_dir())
-        .ok_or_else(|| "Cannot find download directory".to_string())?;
+        .ok_or_else(|| obfstr!("Cannot find download directory").to_string())?;
 
     let timestamp = {
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -74,7 +75,7 @@ pub async fn start_recording(
             .unwrap_or_default()
             .as_secs()
     };
-    let filename = format!("CyberSnatcher_Recording_{}.mp4", timestamp);
+    let filename = format!("{}{}.mp4", obfstr!("CyberSnatcher_Recording_"), timestamp);
     let out_path = download_dir.join(&filename);
     let out_path_str = out_path.to_string_lossy().to_string();
 
@@ -90,17 +91,17 @@ pub async fn start_recording(
         // Spawn ffmpeg: read raw RGBA from stdin, encode to MP4
         let mut ffmpeg = match Command::new(&ffmpeg_bin)
             .args([
-                "-y",
-                "-f", "rawvideo",
-                "-pix_fmt", "rgba",
-                "-s", &format!("{}x{}", iw, ih),
-                "-r", "30",
-                "-i", "-",
-                "-c:v", "libx264",
-                "-preset", "ultrafast",
-                "-crf", "23",
-                "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
+                obfstr!("-y"),
+                obfstr!("-f"), obfstr!("rawvideo"),
+                obfstr!("-pix_fmt"), obfstr!("rgba"),
+                obfstr!("-s"), &format!("{}x{}", iw, ih),
+                obfstr!("-r"), "30",
+                obfstr!("-i"), obfstr!("-"),
+                obfstr!("-c:v"), obfstr!("libx264"),
+                obfstr!("-preset"), obfstr!("ultrafast"),
+                obfstr!("-crf"), "23",
+                obfstr!("-pix_fmt"), obfstr!("yuv420p"),
+                obfstr!("-movflags"), obfstr!("+faststart"),
                 &out_path_str,
             ])
             .stdin(Stdio::piped())
@@ -110,7 +111,7 @@ pub async fn start_recording(
         {
             Ok(child) => child,
             Err(e) => {
-                log::error!("Failed to spawn ffmpeg: {}", e);
+                log::error!("{}{}", obfstr!("Failed to spawn ffmpeg: "), e);
                 let mut status = status_clone.lock().unwrap();
                 *status = RecordingStatus::Idle;
                 return;
@@ -142,7 +143,7 @@ pub async fn start_recording(
                     }
                 }
                 Err(e) => {
-                    log::warn!("Frame capture failed: {}", e);
+                    log::warn!("{}{}", obfstr!("Frame capture failed: "), e);
                 }
             }
 
@@ -173,13 +174,13 @@ pub async fn stop_recording(
             RecordingStatus::Recording => {
                 *status = RecordingStatus::Stopping;
             }
-            _ => return Err("Not recording".into()),
+            _ => return Err(obfstr!("Not recording").into()),
         }
     }
 
     let path = {
         let op = state.output_path.lock().map_err(|e| e.to_string())?;
-        op.clone().ok_or("No output path")?
+        op.clone().ok_or(obfstr!("No output path"))?
     };
 
     Ok(path)
@@ -201,7 +202,7 @@ pub async fn update_recording_region(
 #[tauri::command]
 pub async fn capture_preview(x: f64, y: f64, w: f64, h: f64) -> Result<String, String> {
     let monitors = xcap::Monitor::all().map_err(|e| format!("{}", e))?;
-    let monitor = monitors.into_iter().next().ok_or("No monitor")?;
+    let monitor = monitors.into_iter().next().ok_or(obfstr!("No monitor"))?;
     let image = monitor
         .capture_region(x as u32, y as u32, w.max(1.0) as u32, h.max(1.0) as u32)
         .map_err(|e| format!("{}", e))?;
@@ -210,7 +211,7 @@ pub async fn capture_preview(x: f64, y: f64, w: f64, h: f64) -> Result<String, S
         .write_to(&mut png_buf, image::ImageFormat::Png)
         .map_err(|e| format!("{}", e))?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(png_buf.into_inner());
-    Ok(format!("data:image/png;base64,{}", b64))
+    Ok(format!("{}{}", obfstr!("data:image/png;base64,"), b64))
 }
 
 fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<Vec<u8>, String> {
@@ -218,11 +219,11 @@ fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<Vec<u8>, String> {
     let monitor = monitors
         .into_iter()
         .next()
-        .ok_or_else(|| "No monitor found".to_string())?;
+        .ok_or_else(|| obfstr!("No monitor found").to_string())?;
 
     let image = monitor
         .capture_region(x as u32, y as u32, w, h)
-        .map_err(|e| format!("Capture failed: {}", e))?;
+        .map_err(|e| format!("{}{}", obfstr!("Capture failed: "), e))?;
 
     Ok(image.into_raw())
 }

@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -25,20 +26,20 @@ pub struct DashTrack {
 /// Parse an MPD manifest into a DashManifest
 pub fn parse_mpd(content: &str, base_url: &str) -> Result<DashManifest, String> {
     let doc = roxmltree::Document::parse(content)
-        .map_err(|e| format!("Failed to parse MPD XML: {}", e))?;
+        .map_err(|e| format!("{}{}", obfstr!("Failed to parse MPD XML: "), e))?;
 
     let mpd = doc.root_element();
-    if mpd.tag_name().name() != "MPD" {
-        return Err("Root element is not MPD".into());
+    if mpd.tag_name().name() != obfstr!("MPD") {
+        return Err(obfstr!("Root element is not MPD").into());
     }
 
     // Parse duration from mediaPresentationDuration (ISO 8601 duration)
     let duration = mpd
-        .attribute("mediaPresentationDuration")
+        .attribute(obfstr!("mediaPresentationDuration"))
         .map(parse_iso_duration)
         .unwrap_or(0.0);
 
-    let is_live = mpd.attribute("type").map(|t| t == "dynamic").unwrap_or(false);
+    let is_live = mpd.attribute(obfstr!("type")).map(|t| t == obfstr!("dynamic")).unwrap_or(false);
 
     // Get MPD-level BaseURL
     let mpd_base = find_base_url(&mpd, base_url);
@@ -47,29 +48,29 @@ pub fn parse_mpd(content: &str, base_url: &str) -> Result<DashManifest, String> 
     let mut audio_tracks = vec![];
 
     // Parse all Periods
-    for period in mpd.children().filter(|n| n.tag_name().name() == "Period") {
+    for period in mpd.children().filter(|n| n.tag_name().name() == obfstr!("Period")) {
         let period_base = find_base_url(&period, &mpd_base);
 
-        for adaptation_set in period.children().filter(|n| n.tag_name().name() == "AdaptationSet") {
+        for adaptation_set in period.children().filter(|n| n.tag_name().name() == obfstr!("AdaptationSet")) {
             let as_base = find_base_url(&adaptation_set, &period_base);
 
             let as_mime = adaptation_set
-                .attribute("mimeType")
+                .attribute(obfstr!("mimeType"))
                 .unwrap_or("")
                 .to_string();
             let as_content_type = adaptation_set
-                .attribute("contentType")
+                .attribute(obfstr!("contentType"))
                 .unwrap_or("")
                 .to_string();
 
             // Check for DRM
             let has_drm = adaptation_set.children().any(|n| {
-                n.tag_name().name() == "ContentProtection"
-                    && n.attribute("schemeIdUri")
+                n.tag_name().name() == obfstr!("ContentProtection")
+                    && n.attribute(obfstr!("schemeIdUri"))
                         .map(|s| {
-                            s.contains("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed") // Widevine
-                            || s.contains("9a04f079-9840-4286-ab92-e65be0885f95") // PlayReady
-                            || s.contains("94ce86fb-07ff-4f43-adb8-93d2fa968ca2") // FairPlay
+                            s.contains(obfstr!("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed")) // Widevine
+                            || s.contains(obfstr!("9a04f079-9840-4286-ab92-e65be0885f95")) // PlayReady
+                            || s.contains(obfstr!("94ce86fb-07ff-4f43-adb8-93d2fa968ca2")) // FairPlay
                         })
                         .unwrap_or(false)
             });
@@ -77,27 +78,27 @@ pub fn parse_mpd(content: &str, base_url: &str) -> Result<DashManifest, String> 
             // Get AdaptationSet-level SegmentTemplate
             let as_segment_template = adaptation_set
                 .children()
-                .find(|n| n.tag_name().name() == "SegmentTemplate");
+                .find(|n| n.tag_name().name() == obfstr!("SegmentTemplate"));
 
-            for repr in adaptation_set.children().filter(|n| n.tag_name().name() == "Representation") {
+            for repr in adaptation_set.children().filter(|n| n.tag_name().name() == obfstr!("Representation")) {
                 let repr_base = find_base_url(&repr, &as_base);
 
-                let id = repr.attribute("id").unwrap_or("0").to_string();
+                let id = repr.attribute(obfstr!("id")).unwrap_or("0").to_string();
                 let bandwidth = repr
-                    .attribute("bandwidth")
+                    .attribute(obfstr!("bandwidth"))
                     .and_then(|b| b.parse::<u64>().ok())
                     .unwrap_or(0);
                 let height = repr
-                    .attribute("height")
+                    .attribute(obfstr!("height"))
                     .and_then(|h| h.parse::<u32>().ok());
                 let width = repr
-                    .attribute("width")
+                    .attribute(obfstr!("width"))
                     .and_then(|w| w.parse::<u32>().ok());
                 let mime = repr
-                    .attribute("mimeType")
+                    .attribute(obfstr!("mimeType"))
                     .unwrap_or(&as_mime)
                     .to_string();
-                let codecs = repr.attribute("codecs").map(|c| c.to_string());
+                let codecs = repr.attribute(obfstr!("codecs")).map(|c| c.to_string());
 
                 let label = if let Some(h) = height {
                     format!("{}p", h)
@@ -108,23 +109,23 @@ pub fn parse_mpd(content: &str, base_url: &str) -> Result<DashManifest, String> 
                 // Get Representation-level SegmentTemplate (overrides AS-level)
                 let repr_segment_template = repr
                     .children()
-                    .find(|n| n.tag_name().name() == "SegmentTemplate")
+                    .find(|n| n.tag_name().name() == obfstr!("SegmentTemplate"))
                     .or(as_segment_template);
 
                 let (init_url, segment_urls) = if let Some(seg_tpl) = repr_segment_template {
                     parse_segment_template(&seg_tpl, &repr_base, &id, bandwidth, duration)
-                } else if let Some(seg_list) = repr.children().find(|n| n.tag_name().name() == "SegmentList")
-                    .or_else(|| adaptation_set.children().find(|n| n.tag_name().name() == "SegmentList"))
+                } else if let Some(seg_list) = repr.children().find(|n| n.tag_name().name() == obfstr!("SegmentList"))
+                    .or_else(|| adaptation_set.children().find(|n| n.tag_name().name() == obfstr!("SegmentList")))
                 {
                     parse_segment_list(&seg_list, &repr_base)
-                } else if let Some(seg_base) = repr.children().find(|n| n.tag_name().name() == "SegmentBase")
-                    .or_else(|| adaptation_set.children().find(|n| n.tag_name().name() == "SegmentBase"))
+                } else if let Some(seg_base) = repr.children().find(|n| n.tag_name().name() == obfstr!("SegmentBase"))
+                    .or_else(|| adaptation_set.children().find(|n| n.tag_name().name() == obfstr!("SegmentBase")))
                 {
                     // SegmentBase means single segment (the BaseURL itself)
                     let init = seg_base
                         .children()
-                        .find(|n| n.tag_name().name() == "Initialization")
-                        .and_then(|init| init.attribute("sourceURL"))
+                        .find(|n| n.tag_name().name() == obfstr!("Initialization"))
+                        .and_then(|init| init.attribute(obfstr!("sourceURL")))
                         .map(|u| resolve_url(&repr_base, u));
                     (init, vec![repr_base.clone()])
                 } else {
@@ -178,18 +179,18 @@ fn parse_segment_template(
     bandwidth: u64,
     total_duration: f64,
 ) -> (Option<String>, Vec<String>) {
-    let media_template = seg_tpl.attribute("media").unwrap_or("");
-    let init_template = seg_tpl.attribute("initialization");
+    let media_template = seg_tpl.attribute(obfstr!("media")).unwrap_or("");
+    let init_template = seg_tpl.attribute(obfstr!("initialization"));
     let timescale = seg_tpl
-        .attribute("timescale")
+        .attribute(obfstr!("timescale"))
         .and_then(|t| t.parse::<u64>().ok())
         .unwrap_or(1);
     let start_number = seg_tpl
-        .attribute("startNumber")
+        .attribute(obfstr!("startNumber"))
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(1);
     let segment_duration = seg_tpl
-        .attribute("duration")
+        .attribute(obfstr!("duration"))
         .and_then(|d| d.parse::<u64>().ok());
 
     // Init URL
@@ -201,7 +202,7 @@ fn parse_segment_template(
     // Check for SegmentTimeline
     let timeline = seg_tpl
         .children()
-        .find(|n| n.tag_name().name() == "SegmentTimeline");
+        .find(|n| n.tag_name().name() == obfstr!("SegmentTimeline"));
 
     let mut segment_urls = vec![];
 
@@ -272,14 +273,14 @@ fn parse_segment_list(
 ) -> (Option<String>, Vec<String>) {
     let init_url = seg_list
         .children()
-        .find(|n| n.tag_name().name() == "Initialization")
-        .and_then(|init| init.attribute("sourceURL"))
+        .find(|n| n.tag_name().name() == obfstr!("Initialization"))
+        .and_then(|init| init.attribute(obfstr!("sourceURL")))
         .map(|u| resolve_url(base_url, u));
 
     let segment_urls: Vec<String> = seg_list
         .children()
-        .filter(|n| n.tag_name().name() == "SegmentURL")
-        .filter_map(|seg| seg.attribute("media"))
+        .filter(|n| n.tag_name().name() == obfstr!("SegmentURL"))
+        .filter_map(|seg| seg.attribute(obfstr!("media")))
         .map(|u| resolve_url(base_url, u))
         .collect();
 
@@ -296,14 +297,14 @@ fn substitute_template(
     time: u64,
 ) -> String {
     let mut result = template.to_string();
-    result = result.replace("$RepresentationID$", repr_id);
-    result = result.replace("$Bandwidth$", &bandwidth.to_string());
-    result = result.replace("$Time$", &time.to_string());
+    result = result.replace(obfstr!("$RepresentationID$"), repr_id);
+    result = result.replace(obfstr!("$Bandwidth$"), &bandwidth.to_string());
+    result = result.replace(obfstr!("$Time$"), &time.to_string());
 
     // Handle $Number$ and $Number%0Nd$ (zero-padded)
-    if result.contains("$Number") {
+    if result.contains(obfstr!("$Number")) {
         // Check for format specifier like $Number%05d$
-        if let Some(start) = result.find("$Number%") {
+        if let Some(start) = result.find(obfstr!("$Number%")) {
             let end = result[start + 8..].find('$').map(|e| start + 8 + e);
             if let Some(end) = end {
                 let format_spec = &result[start + 8..end];
@@ -315,7 +316,7 @@ fn substitute_template(
                 }
             }
         }
-        result = result.replace("$Number$", &number.to_string());
+        result = result.replace(obfstr!("$Number$"), &number.to_string());
     }
 
     result
@@ -360,7 +361,7 @@ fn parse_iso_duration(s: &str) -> f64 {
 
 fn find_base_url(node: &roxmltree::Node, parent_base: &str) -> String {
     node.children()
-        .find(|n| n.tag_name().name() == "BaseURL")
+        .find(|n| n.tag_name().name() == obfstr!("BaseURL"))
         .and_then(|n| n.text())
         .map(|text| resolve_url(parent_base, text))
         .unwrap_or_else(|| parent_base.to_string())

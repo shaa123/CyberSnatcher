@@ -1,3 +1,5 @@
+use obfstr::obfstr;
+
 pub mod hls;
 pub mod dash;
 pub mod download;
@@ -25,21 +27,24 @@ pub async fn download_url(
         .unwrap_or_default();
 
     // 1. HLS streams
-    if url_ext == ".m3u8" {
+    if url_ext == obfstr!(".m3u8") {
         log::info!("Routing to HLS engine: {}", url);
         return hls::download_hls(app, job_id, url, page_url, cookies, output_dir, filename, cancelled).await;
     }
 
     // 2. DASH streams — now uses native engine
-    if url_ext == ".mpd" {
+    if url_ext == obfstr!(".mpd") {
         log::info!("Routing to DASH engine: {}", url);
         return dash::download_dash(app, job_id, url, page_url, cookies, output_dir, filename, cancelled).await;
     }
 
     // 3. Direct video files
-    let video_exts = [".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".m4v", ".ts"];
+    let video_exts = [
+        obfstr!(".mp4"), obfstr!(".webm"), obfstr!(".mkv"), obfstr!(".avi"),
+        obfstr!(".mov"), obfstr!(".flv"), obfstr!(".m4v"), obfstr!(".ts"),
+    ];
     for ext in &video_exts {
-        if &url_ext == ext {
+        if url_ext == *ext {
             log::info!("Routing to direct downloader: {}", url);
             let output_path = format!("{}/{}{}", output_dir, filename, ext);
             return direct::download_direct(app, job_id, url, page_url, cookies, &output_path, cancelled).await;
@@ -47,5 +52,5 @@ pub async fn download_url(
     }
 
     // 4. Fall back to yt-dlp
-    Err("USE_YTDLP".into())
+    Err(obfstr!("USE_YTDLP").into())
 }

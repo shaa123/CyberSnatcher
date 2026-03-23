@@ -1,3 +1,5 @@
+use obfstr::obfstr;
+
 pub mod parser;
 
 use std::sync::Arc;
@@ -34,10 +36,10 @@ pub async fn download_dash(
         DownloadProgress {
             job_id: job_id.to_string(),
             percent: 0.0,
-            speed: "Fetching DASH manifest...".to_string(),
-            eta: "—".to_string(),
-            status: "downloading".to_string(),
-            log_line: format!("DASH: Fetching manifest {}", mpd_url),
+            speed: obfstr!("Fetching DASH manifest...").to_string(),
+            eta: "\u{2014}".to_string(),
+            status: obfstr!("downloading").to_string(),
+            log_line: format!("{}{}", obfstr!("DASH: Fetching manifest "), mpd_url),
             file_path: None,
             file_size: None,
         },
@@ -47,18 +49,18 @@ pub async fn download_dash(
     let manifest = parser::parse_mpd(&mpd_text, mpd_url)?;
 
     if manifest.is_live {
-        return Err("Live DASH streams are not yet supported".into());
+        return Err(obfstr!("Live DASH streams are not yet supported").into());
     }
 
     // Check for DRM
     let has_drm_video = manifest.video_tracks.iter().any(|t| t.is_drm);
     let has_drm_audio = manifest.audio_tracks.iter().any(|t| t.is_drm);
     if has_drm_video || has_drm_audio {
-        return Err("DRM protected content — cannot download. This stream uses Widevine/PlayReady/FairPlay encryption.".into());
+        return Err(obfstr!("DRM protected content \u{2014} cannot download. This stream uses Widevine/PlayReady/FairPlay encryption.").into());
     }
 
     if manifest.video_tracks.is_empty() {
-        return Err("No video tracks found in DASH manifest".into());
+        return Err(obfstr!("No video tracks found in DASH manifest").into());
     }
 
     // Select best video track (highest bandwidth)
@@ -73,15 +75,18 @@ pub async fn download_dash(
             percent: 0.0,
             speed: String::new(),
             eta: String::new(),
-            status: "downloading".to_string(),
+            status: obfstr!("downloading").to_string(),
             log_line: format!(
-                "DASH: Video={} ({}bps, {} segments), Audio={}",
+                "{}{}{}{}{}{}{}",
+                obfstr!("DASH: Video="),
                 video_track.label,
-                video_track.bandwidth,
-                video_track.segment_urls.len(),
+                obfstr!(" ("),
+                format!("{}bps, {} segments)", video_track.bandwidth, video_track.segment_urls.len()),
+                obfstr!(", Audio="),
                 audio_track
                     .map(|a| format!("{} ({}bps, {} segments)", a.label, a.bandwidth, a.segment_urls.len()))
-                    .unwrap_or_else(|| "none".to_string())
+                    .unwrap_or_else(|| obfstr!("none").to_string()),
+                "",
             ),
             file_path: None,
             file_size: None,
@@ -89,7 +94,7 @@ pub async fn download_dash(
     );
 
     if cancelled.load(Ordering::Relaxed) {
-        return Err("Cancelled".into());
+        return Err(obfstr!("Cancelled").into());
     }
 
     // Download video init segment
@@ -105,12 +110,13 @@ pub async fn download_dash(
         DownloadProgress {
             job_id: job_id.to_string(),
             percent: 2.0,
-            speed: "Downloading video segments...".to_string(),
+            speed: obfstr!("Downloading video segments...").to_string(),
             eta: String::new(),
-            status: "downloading".to_string(),
+            status: obfstr!("downloading").to_string(),
             log_line: format!(
-                "DASH: Downloading {} video segments",
-                video_track.segment_urls.len()
+                "{}{}",
+                obfstr!("DASH: Downloading "),
+                format!("{} video segments", video_track.segment_urls.len()),
             ),
             file_path: None,
             file_size: None,
@@ -128,7 +134,7 @@ pub async fn download_dash(
     .await?;
 
     if cancelled.load(Ordering::Relaxed) {
-        return Err("Cancelled".into());
+        return Err(obfstr!("Cancelled").into());
     }
 
     // Write video to temp file
@@ -150,7 +156,7 @@ pub async fn download_dash(
     let audio_temp = if let Some(audio) = audio_track {
         if cancelled.load(Ordering::Relaxed) {
             std::fs::remove_file(&video_temp).ok();
-            return Err("Cancelled".into());
+            return Err(obfstr!("Cancelled").into());
         }
 
         let _ = app.emit(
@@ -158,12 +164,13 @@ pub async fn download_dash(
             DownloadProgress {
                 job_id: job_id.to_string(),
                 percent: 50.0,
-                speed: "Downloading audio segments...".to_string(),
+                speed: obfstr!("Downloading audio segments...").to_string(),
                 eta: String::new(),
-                status: "downloading".to_string(),
+                status: obfstr!("downloading").to_string(),
                 log_line: format!(
-                    "DASH: Downloading {} audio segments",
-                    audio.segment_urls.len()
+                    "{}{}",
+                    obfstr!("DASH: Downloading "),
+                    format!("{} audio segments", audio.segment_urls.len()),
                 ),
                 file_path: None,
                 file_size: None,
@@ -210,7 +217,7 @@ pub async fn download_dash(
         if let Some(ref ap) = audio_temp {
             std::fs::remove_file(ap).ok();
         }
-        return Err("Cancelled".into());
+        return Err(obfstr!("Cancelled").into());
     }
 
     // Mux video + audio with ffmpeg
@@ -221,10 +228,10 @@ pub async fn download_dash(
         DownloadProgress {
             job_id: job_id.to_string(),
             percent: 90.0,
-            speed: "Muxing video and audio...".to_string(),
+            speed: obfstr!("Muxing video and audio...").to_string(),
             eta: String::new(),
-            status: "converting".to_string(),
-            log_line: "DASH: Muxing video + audio into MP4".to_string(),
+            status: obfstr!("converting").to_string(),
+            log_line: obfstr!("DASH: Muxing video + audio into MP4").to_string(),
             file_path: None,
             file_size: None,
         },
@@ -248,7 +255,7 @@ pub async fn download_dash(
                     return Ok(path);
                 }
                 Err(e) => {
-                    log::warn!("DASH ffmpeg mux failed: {}, trying remux video only", e);
+                    log::warn!("{}{}{}", obfstr!("DASH ffmpeg mux failed: "), e, obfstr!(", trying remux video only"));
                 }
             }
         }

@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use crate::types::AppSettings;
 
 #[tauri::command]
@@ -12,21 +13,21 @@ pub async fn set_download_folder(_path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn create_folder(path: String) -> Result<(), String> {
-    std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create folder: {}", e))
+    std::fs::create_dir_all(&path).map_err(|e| format!("{}{}", obfstr!("Failed to create folder: "), e))
 }
 
 #[tauri::command]
 pub async fn delete_folder(path: String) -> Result<(), String> {
     if std::path::Path::new(&path).exists() {
-        std::fs::remove_dir_all(&path).map_err(|e| format!("Failed to delete folder: {}", e))
+        std::fs::remove_dir_all(&path).map_err(|e| format!("{}{}", obfstr!("Failed to delete folder: "), e))
     } else {
-        Err("Folder does not exist".to_string())
+        Err(obfstr!("Folder does not exist").to_string())
     }
 }
 
 #[tauri::command]
 pub async fn list_folder_contents(path: String) -> Result<Vec<String>, String> {
-    let entries = std::fs::read_dir(&path).map_err(|e| format!("Failed to read folder: {}", e))?;
+    let entries = std::fs::read_dir(&path).map_err(|e| format!("{}{}", obfstr!("Failed to read folder: "), e))?;
     let mut result = vec![];
     for entry in entries {
         if let Ok(entry) = entry {
@@ -42,22 +43,22 @@ pub async fn list_folder_contents(path: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn open_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("explorer").arg(&path).spawn(); }
+    { let _ = std::process::Command::new(obfstr!("explorer")).arg(&path).spawn(); }
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("open").arg(&path).spawn(); }
+    { let _ = std::process::Command::new(obfstr!("open")).arg(&path).spawn(); }
     #[cfg(target_os = "linux")]
-    { let _ = std::process::Command::new("xdg-open").arg(&path).spawn(); }
+    { let _ = std::process::Command::new(obfstr!("xdg-open")).arg(&path).spawn(); }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn open_file(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("cmd").args(["/c", "start", "", &path]).spawn(); }
+    { let _ = std::process::Command::new(obfstr!("cmd")).args(["/c", "start", "", &path]).spawn(); }
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("open").arg(&path).spawn(); }
+    { let _ = std::process::Command::new(obfstr!("open")).arg(&path).spawn(); }
     #[cfg(target_os = "linux")]
-    { let _ = std::process::Command::new("xdg-open").arg(&path).spawn(); }
+    { let _ = std::process::Command::new(obfstr!("xdg-open")).arg(&path).spawn(); }
     Ok(())
 }
 
@@ -66,20 +67,20 @@ pub async fn open_file(path: String) -> Result<(), String> {
 pub async fn show_in_folder(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("explorer")
+        let _ = std::process::Command::new(obfstr!("explorer"))
             .args(["/select,", &path])
             .spawn();
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open")
+        let _ = std::process::Command::new(obfstr!("open"))
             .args(["-R", &path])
             .spawn();
     }
     #[cfg(target_os = "linux")]
     {
         if let Some(parent) = std::path::Path::new(&path).parent() {
-            let _ = std::process::Command::new("xdg-open")
+            let _ = std::process::Command::new(obfstr!("xdg-open"))
                 .arg(parent)
                 .spawn();
         }

@@ -1,40 +1,50 @@
+use obfstr::obfstr;
 use reqwest::Client;
 use std::collections::HashMap;
+use zeroize::Zeroize;
 
 pub struct VideoClient {
     client: Client,
     pub default_headers: HashMap<String, String>,
 }
 
+impl Drop for VideoClient {
+    fn drop(&mut self) {
+        for value in self.default_headers.values_mut() {
+            value.zeroize();
+        }
+    }
+}
+
 impl VideoClient {
     pub fn new() -> Self {
         let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+            .user_agent(obfstr!("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"))
             .timeout(std::time::Duration::from_secs(30))
             .connect_timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap();
         let mut default_headers = HashMap::new();
-        default_headers.insert("Accept".into(), "*/*".into());
-        default_headers.insert("Accept-Language".into(), "en-US,en;q=0.9".into());
-        default_headers.insert("Sec-Fetch-Dest".into(), "video".into());
-        default_headers.insert("Sec-Fetch-Mode".into(), "no-cors".into());
-        default_headers.insert("Sec-Fetch-Site".into(), "cross-site".into());
+        default_headers.insert(obfstr!("Accept").into(), obfstr!("*/*").into());
+        default_headers.insert(obfstr!("Accept-Language").into(), obfstr!("en-US,en;q=0.9").into());
+        default_headers.insert(obfstr!("Sec-Fetch-Dest").into(), obfstr!("video").into());
+        default_headers.insert(obfstr!("Sec-Fetch-Mode").into(), obfstr!("no-cors").into());
+        default_headers.insert(obfstr!("Sec-Fetch-Site").into(), obfstr!("cross-site").into());
         Self { client, default_headers }
     }
 
     pub fn with_referer(mut self, page_url: &str) -> Self {
-        self.default_headers.insert("Referer".into(), page_url.into());
+        self.default_headers.insert(obfstr!("Referer").into(), page_url.into());
         if let Ok(url) = url::Url::parse(page_url) {
             let origin = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
-            self.default_headers.insert("Origin".into(), origin);
+            self.default_headers.insert(obfstr!("Origin").into(), origin);
         }
         self
     }
 
     pub fn with_cookies(mut self, cookies: &str) -> Self {
         if !cookies.is_empty() {
-            self.default_headers.insert("Cookie".into(), cookies.into());
+            self.default_headers.insert(obfstr!("Cookie").into(), cookies.into());
         }
         self
     }
@@ -46,7 +56,7 @@ impl VideoClient {
         }
         let resp = req.send().await.map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
-            return Err(format!("HTTP {}", resp.status()));
+            return Err(format!("{}{}", obfstr!("HTTP "), resp.status()));
         }
         resp.text().await.map_err(|e| e.to_string())
     }
@@ -58,7 +68,7 @@ impl VideoClient {
         }
         let resp = req.send().await.map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
-            return Err(format!("HTTP {}", resp.status()));
+            return Err(format!("{}{}", obfstr!("HTTP "), resp.status()));
         }
         resp.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
     }
@@ -70,11 +80,11 @@ impl VideoClient {
         for (k, v) in &self.default_headers {
             req = req.header(k.as_str(), v.as_str());
         }
-        req = req.header("Range", format!("bytes={}-{}", offset, end));
+        req = req.header(obfstr!("Range"), format!("bytes={}-{}", offset, end));
         let resp = req.send().await.map_err(|e| e.to_string())?;
         let status = resp.status();
         if !status.is_success() && status.as_u16() != 206 {
-            return Err(format!("HTTP {} for range request", status));
+            return Err(format!("{}{}", obfstr!("HTTP "), format!("{} for range request", status)));
         }
         resp.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string())
     }

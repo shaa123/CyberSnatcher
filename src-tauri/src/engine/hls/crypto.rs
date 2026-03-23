@@ -1,12 +1,23 @@
+use obfstr::obfstr;
 use aes::Aes128;
 use cbc::Decryptor;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+use zeroize::Zeroize;
 
 type Aes128CbcDec = Decryptor<Aes128>;
 
 pub struct HlsDecryptor {
     key: [u8; 16],
     default_iv: Option<[u8; 16]>,
+}
+
+impl Drop for HlsDecryptor {
+    fn drop(&mut self) {
+        self.key.zeroize();
+        if let Some(ref mut iv) = self.default_iv {
+            iv.zeroize();
+        }
+    }
 }
 
 impl HlsDecryptor {
@@ -17,7 +28,7 @@ impl HlsDecryptor {
     ) -> Result<Self, String> {
         let key_bytes = client.get_bytes(key_uri).await?;
         if key_bytes.len() != 16 {
-            return Err(format!("AES key is {} bytes, expected 16", key_bytes.len()));
+            return Err(format!("{}{}{}", obfstr!("AES key is "), key_bytes.len(), obfstr!(" bytes, expected 16")));
         }
         let mut key = [0u8; 16];
         key.copy_from_slice(&key_bytes);
@@ -53,7 +64,7 @@ impl HlsDecryptor {
 
         let decrypted = decryptor
             .decrypt_padded_mut::<block_padding::Pkcs7>(&mut buf)
-            .map_err(|e| format!("AES decryption failed: {}", e))?;
+            .map_err(|e| format!("{}{}", obfstr!("AES decryption failed: "), e))?;
 
         Ok(decrypted.to_vec())
     }

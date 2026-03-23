@@ -1,3 +1,5 @@
+use obfstr::obfstr;
+
 pub mod parser;
 pub mod crypto;
 pub mod live;
@@ -27,9 +29,9 @@ pub async fn download_hls(
 
     // Emit starting
     let _ = app.emit("download-progress", DownloadProgress {
-        job_id: job_id.to_string(), percent: 0.0, speed: "Fetching manifest...".to_string(),
-        eta: "—".to_string(), status: "downloading".to_string(),
-        log_line: format!("HLS: Fetching manifest {}", manifest_url),
+        job_id: job_id.to_string(), percent: 0.0, speed: obfstr!("Fetching manifest...").to_string(),
+        eta: "\u{2014}".to_string(), status: obfstr!("downloading").to_string(),
+        log_line: format!("{}{}", obfstr!("HLS: Fetching manifest "), manifest_url),
         file_path: None, file_size: None,
     });
 
@@ -40,17 +42,22 @@ pub async fn download_hls(
         parser::M3u8Result::Master(master) => {
             // Try best quality first, with fallback to lower qualities
             let variant_urls: Vec<String> = master.variants.iter().map(|v| v.url.clone()).collect();
-            let best = master.variants.last().ok_or("No variants in master playlist")?;
+            let best = master.variants.last().ok_or(obfstr!("No variants in master playlist"))?;
             let _ = app.emit("download-progress", DownloadProgress {
                 job_id: job_id.to_string(), percent: 0.0, speed: String::new(),
-                eta: String::new(), status: "downloading".to_string(),
-                log_line: format!("HLS: Selected quality {} ({}bps)", best.label, best.bandwidth),
+                eta: String::new(), status: obfstr!("downloading").to_string(),
+                log_line: format!("{}{}{}{}{}",
+                    obfstr!("HLS: Selected quality "),
+                    best.label,
+                    obfstr!(" ("),
+                    best.bandwidth,
+                    obfstr!("bps)")),
                 file_path: None, file_size: None,
             });
             let media_text = client.get_text(&best.url).await?;
             match parser::parse_m3u8(&media_text, &best.url)? {
                 parser::M3u8Result::Media(m) => (m, variant_urls),
-                _ => return Err("Expected media playlist from variant".into()),
+                _ => return Err(obfstr!("Expected media playlist from variant").into()),
             }
         }
         parser::M3u8Result::Media(media) => (media, vec![]),
@@ -62,12 +69,17 @@ pub async fn download_hls(
 
     let _ = app.emit("download-progress", DownloadProgress {
         job_id: job_id.to_string(), percent: 0.0, speed: String::new(),
-        eta: String::new(), status: "downloading".to_string(),
-        log_line: format!("HLS: {} segments, {:.0}s, encrypted={}, byterange={}, discontinuities={}",
+        eta: String::new(), status: obfstr!("downloading").to_string(),
+        log_line: format!("{}{}{}{}{}{}{}{}{}{}",
+            obfstr!("HLS: "),
             media_playlist.segments.len(),
-            media_playlist.total_duration,
+            obfstr!(" segments, "),
+            format!("{:.0}", media_playlist.total_duration),
+            obfstr!("s, encrypted="),
             media_playlist.encryption.is_some(),
+            obfstr!(", byterange="),
             media_playlist.segments.iter().any(|s| s.byterange.is_some()),
+            obfstr!(", discontinuities="),
             media_playlist.has_discontinuity,
         ),
         file_path: None, file_size: None,
@@ -75,18 +87,18 @@ pub async fn download_hls(
 
     // Decryption setup
     let decryptor = if let Some(ref enc) = media_playlist.encryption {
-        if enc.method == "AES-128" {
+        if enc.method == obfstr!("AES-128") {
             Some(crypto::HlsDecryptor::new(&client, &enc.key_uri, enc.iv.clone()).await?)
-        } else if enc.method == "SAMPLE-AES" || enc.method == "SAMPLE-AES-CTR" {
+        } else if enc.method == obfstr!("SAMPLE-AES") || enc.method == obfstr!("SAMPLE-AES-CTR") {
             let _ = app.emit("download-progress", DownloadProgress {
                 job_id: job_id.to_string(), percent: 0.0, speed: String::new(),
-                eta: String::new(), status: "downloading".to_string(),
-                log_line: format!("HLS: WARNING — {} encryption detected. Segments will be downloaded raw (may not play correctly).", enc.method),
+                eta: String::new(), status: obfstr!("downloading").to_string(),
+                log_line: format!("{}{}{}", obfstr!("HLS: WARNING \u{2014} "), enc.method, obfstr!(" encryption detected. Segments will be downloaded raw (may not play correctly).")),
                 file_path: None, file_size: None,
             });
             None
         } else {
-            return Err(format!("Unsupported encryption: {}", enc.method));
+            return Err(format!("{}{}", obfstr!("Unsupported encryption: "), enc.method));
         }
     } else { None };
 
@@ -111,7 +123,7 @@ pub async fn download_hls(
         super::download::download_segments(app, job_id, &client, &seg_urls, 8, cancelled).await?
     };
 
-    if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
+    if cancelled.load(Ordering::Relaxed) { return Err(obfstr!("Cancelled").into()); }
 
     // Decrypt
     let mut final_segments: Vec<Vec<u8>> = vec![];
@@ -125,7 +137,7 @@ pub async fn download_hls(
         }
     }
 
-    if final_segments.is_empty() { return Err("All segments failed".into()); }
+    if final_segments.is_empty() { return Err(obfstr!("All segments failed").into()); }
 
     // Write to file
     let is_fmp4 = init_segment.is_some()
@@ -234,8 +246,8 @@ async fn download_byterange_segments(
             percent,
             speed: speed_str,
             eta: format!("{:.0}s", eta),
-            status: "downloading".to_string(),
-            log_line: format!("HLS: segment {}/{}", i + 1, total),
+            status: obfstr!("downloading").to_string(),
+            log_line: format!("{}{}/{}", obfstr!("HLS: segment "), i + 1, total),
             file_path: None,
             file_size: Some(total_bytes),
         });

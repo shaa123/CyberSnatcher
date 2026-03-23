@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use crate::types::{DownloadHandle, DownloadManager, DownloadProgress};
 use crate::ytdlp::{resolve_ytdlp_path, sanitize_filename};
 use crate::ffmpeg::resolve_ffmpeg_path;
@@ -70,50 +71,53 @@ fn run_download(
     };
 
     let mut args: Vec<String> = vec![
-        "--newline".to_string(),
-        "--no-warnings".to_string(),
-        "--no-playlist".to_string(),
-        "--progress-template".to_string(),
-        "download:CYBERPROG|||%(progress._percent_str)s|||%(progress._speed_str)s|||%(progress._eta_str)s".to_string(),
-        "-o".to_string(),
+        obfstr!("--newline").to_string(),
+        obfstr!("--no-warnings").to_string(),
+        obfstr!("--no-playlist").to_string(),
+        obfstr!("--progress-template").to_string(),
+        obfstr!("download:CYBERPROG|||%(progress._percent_str)s|||%(progress._speed_str)s|||%(progress._eta_str)s").to_string(),
+        obfstr!("-o").to_string(),
         output_template.clone(),
     ];
 
     // Point yt-dlp to our ffmpeg for merging
     if let Ok(ffmpeg_bin) = resolve_ffmpeg_path(&app) {
         if let Some(ffmpeg_dir) = ffmpeg_bin.parent() {
-            args.push("--ffmpeg-location".to_string());
+            args.push(obfstr!("--ffmpeg-location").to_string());
             args.push(ffmpeg_dir.to_string_lossy().to_string());
         }
     }
 
     // Format/quality selection
     if format_quality == "audio" {
-        args.push("-x".to_string());
-        args.push("--audio-format".to_string());
-        args.push("mp3".to_string());
+        args.push(obfstr!("-x").to_string());
+        args.push(obfstr!("--audio-format").to_string());
+        args.push(obfstr!("mp3").to_string());
     } else if !format_quality.is_empty() && format_quality != "best" {
         let height = format_quality.replace("p", "");
-        args.push("-f".to_string());
+        args.push(obfstr!("-f").to_string());
         args.push(format!(
-            "bestvideo[height<={}]+bestaudio/best[height<={}]",
-            height, height
+            "{}{}{}{}",
+            obfstr!("bestvideo[height<="),
+            height,
+            obfstr!("]+bestaudio/best[height<="),
+            format!("{}]", height)
         ));
     }
 
     // Container format
     if !format_type.is_empty() && format_type != "Default" && format_quality != "audio" {
-        args.push("--merge-output-format".to_string());
+        args.push(obfstr!("--merge-output-format").to_string());
         args.push(format_type.to_lowercase());
     }
 
     // Subtitle download
     if write_subs {
-        args.push("--write-subs".to_string());
-        args.push("--write-auto-subs".to_string());
-        args.push("--sub-langs".to_string());
-        args.push("all".to_string());
-        args.push("--embed-subs".to_string());
+        args.push(obfstr!("--write-subs").to_string());
+        args.push(obfstr!("--write-auto-subs").to_string());
+        args.push(obfstr!("--sub-langs").to_string());
+        args.push(obfstr!("all").to_string());
+        args.push(obfstr!("--embed-subs").to_string());
     }
 
     args.push(url.clone());
@@ -122,10 +126,10 @@ fn run_download(
     emit_progress(&app, &job_id, DownloadProgress {
         job_id: job_id.clone(),
         percent: 0.0,
-        speed: "Starting...".to_string(),
-        eta: "—".to_string(),
-        status: "downloading".to_string(),
-        log_line: format!("Initiating download: {}", url),
+        speed: obfstr!("Starting...").to_string(),
+        eta: "\u{2014}".to_string(),
+        status: obfstr!("downloading").to_string(),
+        log_line: format!("{}{}", obfstr!("Initiating download: "), url),
         file_path: None,
         file_size: None,
     });
@@ -164,8 +168,8 @@ fn run_download(
                                 percent: -1.0,
                                 speed: String::new(),
                                 eta: String::new(),
-                                status: "downloading".to_string(),
-                                log_line: format!("[stderr] {}", line),
+                                status: obfstr!("downloading").to_string(),
+                                log_line: format!("{}{}", obfstr!("[stderr] "), line),
                                 file_path: None,
                                 file_size: None,
                             });
@@ -186,8 +190,8 @@ fn run_download(
                             percent: -1.0,
                             speed: String::new(),
                             eta: String::new(),
-                            status: "cancelled".to_string(),
-                            log_line: "Download cancelled by user.".to_string(),
+                            status: obfstr!("cancelled").to_string(),
+                            log_line: obfstr!("Download cancelled by user.").to_string(),
                             file_path: None,
                             file_size: None,
                         });
@@ -195,7 +199,7 @@ fn run_download(
                         return;
                     }
 
-                    if line.contains("CYBERPROG|||") {
+                    if line.contains(obfstr!("CYBERPROG|||")) {
                         let parts: Vec<&str> = line.split("|||").collect();
                         if parts.len() >= 4 {
                             let percent_str = parts[1].trim().replace('%', "");
@@ -208,19 +212,19 @@ fn run_download(
                                 percent,
                                 speed: speed.clone(),
                                 eta: eta.clone(),
-                                status: "downloading".to_string(),
+                                status: obfstr!("downloading").to_string(),
                                 log_line: String::new(),
                                 file_path: None,
                                 file_size: None,
                             });
                         }
-                    } else if line.contains("[Merger]") || line.contains("[ffmpeg]") {
+                    } else if line.contains(obfstr!("[Merger]")) || line.contains(obfstr!("[ffmpeg]")) {
                         emit_progress(&app, &job_id, DownloadProgress {
                             job_id: job_id.clone(),
                             percent: 99.0,
                             speed: String::new(),
                             eta: String::new(),
-                            status: "converting".to_string(),
+                            status: obfstr!("converting").to_string(),
                             log_line: line.clone(),
                             file_path: None,
                             file_size: None,
@@ -231,7 +235,7 @@ fn run_download(
                             percent: -1.0,
                             speed: String::new(),
                             eta: String::new(),
-                            status: "downloading".to_string(),
+                            status: obfstr!("downloading").to_string(),
                             log_line: line.clone(),
                             file_path: None,
                             file_size: None,
@@ -256,8 +260,8 @@ fn run_download(
                             percent: 100.0,
                             speed: String::new(),
                             eta: String::new(),
-                            status: "complete".to_string(),
-                            log_line: "EXTRACTION COMPLETE ✓".to_string(),
+                            status: obfstr!("complete").to_string(),
+                            log_line: obfstr!("EXTRACTION COMPLETE \u{2713}").to_string(),
                             file_path: Some(file_path),
                             file_size,
                         });
@@ -267,8 +271,8 @@ fn run_download(
                             percent: -1.0,
                             speed: String::new(),
                             eta: String::new(),
-                            status: "error".to_string(),
-                            log_line: format!("yt-dlp exited with code: {}", status),
+                            status: obfstr!("error").to_string(),
+                            log_line: format!("{}{}", obfstr!("yt-dlp exited with code: "), status),
                             file_path: None,
                             file_size: None,
                         });
@@ -280,8 +284,8 @@ fn run_download(
                         percent: -1.0,
                         speed: String::new(),
                         eta: String::new(),
-                        status: "error".to_string(),
-                        log_line: format!("Error waiting for process: {}", e),
+                        status: obfstr!("error").to_string(),
+                        log_line: format!("{}{}", obfstr!("Error waiting for process: "), e),
                         file_path: None,
                         file_size: None,
                     });
@@ -296,8 +300,8 @@ fn run_download(
                 percent: -1.0,
                 speed: String::new(),
                 eta: String::new(),
-                status: "error".to_string(),
-                log_line: format!("Failed to start yt-dlp: {}. Is it installed?", e),
+                status: obfstr!("error").to_string(),
+                log_line: format!("{}{}", obfstr!("Failed to start yt-dlp: "), format!("{}. {}", e, obfstr!("Is it installed?"))),
                 file_path: None,
                 file_size: None,
             });
@@ -309,13 +313,13 @@ fn run_download(
 fn kill_process(pid: u32) {
     #[cfg(target_os = "windows")]
     {
-        let _ = Command::new("taskkill")
+        let _ = Command::new(obfstr!("taskkill"))
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .output();
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = Command::new("kill")
+        let _ = Command::new(obfstr!("kill"))
             .args(["-9", &pid.to_string()])
             .output();
     }

@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
@@ -7,7 +8,7 @@ use tauri::Manager;
 pub fn resolve_ytdlp_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     // 1. Check for bundled sidecar binary next to the app
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let sidecar = resource_dir.join("binaries").join(ytdlp_binary_name());
+        let sidecar = resource_dir.join(obfstr!("binaries")).join(ytdlp_binary_name());
         if sidecar.exists() {
             return Ok(sidecar);
         }
@@ -24,14 +25,14 @@ pub fn resolve_ytdlp_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
 
     // 3. Check src-tauri/binaries/ (dev mode)
-    let dev_path = PathBuf::from("binaries").join(ytdlp_binary_name());
+    let dev_path = PathBuf::from(obfstr!("binaries")).join(ytdlp_binary_name());
     if dev_path.exists() {
         return Ok(dev_path);
     }
 
     // 4. Fall back to system PATH
-    let cmd = if cfg!(windows) { "where" } else { "which" };
-    let bin = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
+    let cmd = if cfg!(windows) { obfstr!("where") } else { obfstr!("which") };
+    let bin = if cfg!(windows) { obfstr!("yt-dlp.exe") } else { obfstr!("yt-dlp") };
     if let Ok(output) = Command::new(cmd).arg(bin).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -41,20 +42,20 @@ pub fn resolve_ytdlp_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    Err("yt-dlp not found. Install it from https://github.com/yt-dlp/yt-dlp/releases or place it in the binaries/ folder.".to_string())
+    Err(obfstr!("yt-dlp not found. Install it from https://github.com/yt-dlp/yt-dlp/releases or place it in the binaries/ folder.").to_string())
 }
 
-fn ytdlp_binary_name() -> &'static str {
+fn ytdlp_binary_name() -> String {
     if cfg!(target_os = "windows") {
-        "yt-dlp-x86_64-pc-windows-msvc.exe"
+        obfstr!("yt-dlp-x86_64-pc-windows-msvc.exe").to_string()
     } else if cfg!(target_os = "macos") {
         if cfg!(target_arch = "aarch64") {
-            "yt-dlp-aarch64-apple-darwin"
+            obfstr!("yt-dlp-aarch64-apple-darwin").to_string()
         } else {
-            "yt-dlp-x86_64-apple-darwin"
+            obfstr!("yt-dlp-x86_64-apple-darwin").to_string()
         }
     } else {
-        "yt-dlp-x86_64-unknown-linux-gnu"
+        obfstr!("yt-dlp-x86_64-unknown-linux-gnu").to_string()
     }
 }
 

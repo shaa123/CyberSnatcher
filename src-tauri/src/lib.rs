@@ -1,3 +1,5 @@
+use obfstr::obfstr;
+
 mod commands;
 pub mod engine;
 pub mod ffmpeg;
@@ -36,5 +38,5 @@ pub fn run() {
             commands::settings::show_in_folder,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running CyberSnatcher");
+        .expect(obfstr!("error while running CyberSnatcher"));
 }

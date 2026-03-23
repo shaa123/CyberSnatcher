@@ -1,3 +1,4 @@
+use obfstr::obfstr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use futures_util::StreamExt;
 use tauri::Emitter;
@@ -26,12 +27,12 @@ pub async fn download_direct(
     }
 
     let mut req = client.get_streaming(url);
-    if start_byte > 0 { req = req.header("Range", format!("bytes={}-", start_byte)); }
+    if start_byte > 0 { req = req.header(obfstr!("Range"), format!("bytes={}-", start_byte)); }
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
     if status != 200 && status != 206 {
-        return Err(format!("HTTP {}", resp.status()));
+        return Err(format!("{}{}", obfstr!("HTTP "), resp.status()));
     }
 
     // If we requested a range but got 200 (server ignored Range header),
@@ -52,7 +53,7 @@ pub async fn download_direct(
 
     use std::io::Write;
     while let Some(chunk) = stream.next().await {
-        if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
+        if cancelled.load(Ordering::Relaxed) { return Err(obfstr!("Cancelled").into()); }
 
         let chunk = chunk.map_err(|e| e.to_string())?;
         file.write_all(&chunk).map_err(|e| e.to_string())?;
@@ -73,7 +74,7 @@ pub async fn download_direct(
             percent: progress,
             speed: speed_str,
             eta: eta_str,
-            status: "downloading".to_string(),
+            status: obfstr!("downloading").to_string(),
             log_line: String::new(),
             file_path: None,
             file_size: None,
@@ -83,7 +84,7 @@ pub async fn download_direct(
     let file_size = std::fs::metadata(output_path).map(|m| m.len()).ok();
     let _ = app.emit("download-progress", DownloadProgress {
         job_id: job_id.to_string(), percent: 100.0, speed: String::new(), eta: String::new(),
-        status: "complete".to_string(), log_line: "Download complete!".to_string(),
+        status: obfstr!("complete").to_string(), log_line: obfstr!("Download complete!").to_string(),
         file_path: Some(output_path.to_string()), file_size: file_size,
     });
 
