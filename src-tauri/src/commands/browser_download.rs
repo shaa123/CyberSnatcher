@@ -91,7 +91,7 @@ pub async fn start_browser_download(
         let dm = app.state::<DownloadManager>();
         if let Ok(mut handles) = dm.handles.lock() {
             handles.remove(&job_id);
-        }
+        };
     }
 
     // Emit completion/error

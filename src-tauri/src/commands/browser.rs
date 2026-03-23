@@ -129,26 +129,24 @@ pub async fn create_browser_webview(app: AppHandle, url: String) -> Result<(), S
 
     let main_window = app.get_window("main").ok_or("Main window not found")?;
 
-    // Create the browser webview
-    let webview = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(
+    // Create the browser webview with on_navigation callback
+    let app_clone = app.clone();
+    let builder = WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(
         url.parse().map_err(|e| format!("Invalid URL: {}", e))?
     ))
-    .auto_resize();
+    .auto_resize()
+    .on_navigation(move |nav_url: &url::Url| {
+        let _ = app_clone.emit("browser-navigated", serde_json::json!({ "url": nav_url.as_str() }));
+        true
+    });
 
     let webview = main_window
-        .add_child(webview, tauri::LogicalPosition::new(0.0, 80.0), tauri::LogicalSize::new(800.0, 600.0))
+        .add_child(builder, tauri::LogicalPosition::new(0.0, 80.0), tauri::LogicalSize::new(800.0, 600.0))
         .map_err(|e| format!("Failed to create webview: {}", e))?;
 
     // Inject stream detection script on page load
     let script = stream_detection_script();
     let _ = webview.eval(&script);
-
-    // Listen for navigation events
-    let app_clone = app.clone();
-    webview.on_navigation(move |nav_url| {
-        let _ = app_clone.emit("browser-navigated", serde_json::json!({ "url": nav_url.as_str() }));
-        true
-    });
 
     {
         let mut label = state.webview_label.lock().unwrap();
