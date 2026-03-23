@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import obfuscator from "rollup-obfuscator";
+import { obfuscator } from "rollup-obfuscator";
 
 const host = process.env.TAURI_DEV_HOST;
 
