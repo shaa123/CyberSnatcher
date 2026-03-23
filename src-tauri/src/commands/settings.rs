@@ -1,4 +1,5 @@
 use obfstr::obfstr;
+use crate::no_window;
 use crate::types::AppSettings;
 
 #[tauri::command]
@@ -54,7 +55,7 @@ pub async fn open_in_explorer(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn open_file(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new(obfstr!("cmd")).args(["/c", "start", "", &path]).spawn(); }
+    { let _ = no_window(&mut std::process::Command::new(obfstr!("cmd"))).args(["/c", "start", "", &path]).spawn(); }
     #[cfg(target_os = "macos")]
     { let _ = std::process::Command::new(obfstr!("open")).arg(&path).spawn(); }
     #[cfg(target_os = "linux")]

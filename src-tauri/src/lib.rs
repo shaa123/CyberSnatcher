@@ -11,6 +11,18 @@ mod ytdlp;
 use license::LicenseState;
 use types::DownloadManager;
 
+/// On Windows, configure a Command to not spawn a visible console window.
+#[cfg(target_os = "windows")]
+pub fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    cmd
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

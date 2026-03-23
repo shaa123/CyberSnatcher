@@ -1,4 +1,5 @@
 use obfstr::obfstr;
+use crate::no_window;
 use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
@@ -46,7 +47,7 @@ pub fn resolve_ytdlp_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     // 4. Fall back to system PATH
     let cmd = if cfg!(windows) { "where" } else { "which" };
     let bin = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
-    if let Ok(output) = Command::new(cmd).arg(bin).output() {
+    if let Ok(output) = no_window(Command::new(cmd).arg(bin)).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {

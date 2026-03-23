@@ -1,4 +1,5 @@
 use obfstr::obfstr;
+use crate::no_window;
 use crate::types::{detect_site, detect_type, QualityOption, UrlAnalysis};
 use crate::ytdlp::resolve_ytdlp_path;
 use std::process::Command;
@@ -11,8 +12,8 @@ pub async fn check_ytdlp(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 pub async fn get_ytdlp_version(app: tauri::AppHandle) -> Result<String, String> {
     let bin = resolve_ytdlp_path(&app)?;
-    let output = Command::new(&bin)
-        .arg(obfstr!("--version"))
+    let output = no_window(Command::new(&bin)
+        .arg(obfstr!("--version")))
         .output()
         .map_err(|e| format!("{}{}", obfstr!("Failed to run yt-dlp: "), e))?;
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -21,8 +22,8 @@ pub async fn get_ytdlp_version(app: tauri::AppHandle) -> Result<String, String> 
 #[tauri::command]
 pub async fn update_ytdlp(app: tauri::AppHandle) -> Result<String, String> {
     let bin = resolve_ytdlp_path(&app)?;
-    let output = Command::new(&bin)
-        .args([obfstr!("--update")])
+    let output = no_window(Command::new(&bin)
+        .args([obfstr!("--update")]))
         .output()
         .map_err(|e| format!("{}{}", obfstr!("Failed to run yt-dlp --update: "), e))?;
 
@@ -46,8 +47,8 @@ pub async fn update_ytdlp(app: tauri::AppHandle) -> Result<String, String> {
 pub async fn analyze_url(app: tauri::AppHandle, url: String) -> Result<UrlAnalysis, String> {
     let bin = resolve_ytdlp_path(&app)?;
 
-    let output = Command::new(&bin)
-        .args([obfstr!("--dump-json"), obfstr!("--no-download"), obfstr!("--no-warnings"), obfstr!("--no-playlist"), &url])
+    let output = no_window(Command::new(&bin)
+        .args([obfstr!("--dump-json"), obfstr!("--no-download"), obfstr!("--no-warnings"), obfstr!("--no-playlist"), &url]))
         .output()
         .map_err(|e| format!("{}{}", obfstr!("Failed to run yt-dlp: "), e))?;
 

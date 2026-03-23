@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::no_window;
 use crate::types::DownloadProgress;
 
 // ── Binary resolver ──────────────────────────────────────────────────────────
@@ -32,7 +33,7 @@ pub fn resolve_ffmpeg_path(app: &AppHandle) -> Result<std::path::PathBuf, String
     // 4. System PATH
     let cmd = if cfg!(windows) { "where" } else { "which" };
     let bin = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-    if let Ok(output) = Command::new(cmd).arg(bin).output() {
+    if let Ok(output) = no_window(Command::new(cmd).arg(bin)).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
@@ -199,10 +200,10 @@ pub fn run_ffmpeg_sync(
 
     emit_convert_progress(app, job_id, 0.0, obfstr!("Starting conversion..."));
 
-    let mut child = Command::new(&bin)
+    let mut child = no_window(Command::new(&bin)
         .args(&full_args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null()))
         .spawn()
         .map_err(|e| format!("{}{}", obfstr!("Failed to start ffmpeg: "), e))?;
 
@@ -212,7 +213,7 @@ pub fn run_ffmpeg_sync(
         for line in reader.lines().flatten() {
             if cancelled.load(Ordering::Relaxed) {
                 #[cfg(target_os = "windows")]
-                { let _ = Command::new(obfstr!("taskkill")).args(["/PID", &child.id().to_string(), "/T", "/F"]).output(); }
+                { let _ = no_window(Command::new(obfstr!("taskkill")).args(["/PID", &child.id().to_string(), "/T", "/F"])).output(); }
                 #[cfg(not(target_os = "windows"))]
                 { let _ = Command::new(obfstr!("kill")).args(["-9", &child.id().to_string()]).output(); }
                 std::fs::remove_file(output_path).ok();
@@ -277,10 +278,10 @@ pub fn run_ffmpeg_mux(
 
     emit_convert_progress(app, job_id, 90.0, obfstr!("Muxing video + audio..."));
 
-    let mut child = Command::new(&bin)
+    let mut child = no_window(Command::new(&bin)
         .args(&args)
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped()))
         .spawn()
         .map_err(|e| format!("{}{}", obfstr!("Failed to start ffmpeg mux: "), e))?;
 
@@ -288,7 +289,7 @@ pub fn run_ffmpeg_mux(
     loop {
         if cancelled.load(Ordering::Relaxed) {
             #[cfg(target_os = "windows")]
-            { let _ = Command::new(obfstr!("taskkill")).args(["/PID", &child.id().to_string(), "/T", "/F"]).output(); }
+            { let _ = no_window(Command::new(obfstr!("taskkill")).args(["/PID", &child.id().to_string(), "/T", "/F"])).output(); }
             #[cfg(not(target_os = "windows"))]
             { let _ = Command::new(obfstr!("kill")).args(["-9", &child.id().to_string()]).output(); }
             std::fs::remove_file(output_path).ok();
@@ -340,10 +341,10 @@ fn emit_convert_progress(app: &AppHandle, job_id: &str, percent: f64, log_line: 
 
 fn get_duration_sync(ffmpeg_bin: &std::path::Path, input: &str) -> f64 {
     // Use ffmpeg -i to get duration from stderr
-    let output = Command::new(ffmpeg_bin)
+    let output = no_window(Command::new(ffmpeg_bin)
         .args([obfstr!("-i"), input])
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped()))
         .output();
 
     if let Ok(output) = output {

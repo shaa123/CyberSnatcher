@@ -1,5 +1,6 @@
 use obfstr::obfstr;
 use crate::license::{LicenseState, require_license_for_quality};
+use crate::no_window;
 use crate::types::{DownloadHandle, DownloadManager, DownloadProgress};
 use crate::ytdlp::{resolve_ytdlp_path, sanitize_filename};
 use crate::ffmpeg::resolve_ffmpeg_path;
@@ -139,10 +140,10 @@ fn run_download(
         file_size: None,
     });
 
-    let child = Command::new(&bin_path)
+    let child = no_window(Command::new(&bin_path)
         .args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped()))
         .spawn();
 
     match child {
@@ -318,8 +319,8 @@ fn run_download(
 fn kill_process(pid: u32) {
     #[cfg(target_os = "windows")]
     {
-        let _ = Command::new(obfstr!("taskkill"))
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
+        let _ = no_window(Command::new(obfstr!("taskkill"))
+            .args(["/PID", &pid.to_string(), "/T", "/F"]))
             .output();
     }
     #[cfg(not(target_os = "windows"))]
