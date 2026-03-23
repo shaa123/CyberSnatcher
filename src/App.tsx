@@ -395,7 +395,6 @@ export default function App() {
                   fontFamily: "system-ui, -apple-system, sans-serif", fontSize: "17px", fontWeight: 900, margin: 0,
                   background: "linear-gradient(135deg, #b400ff 0%, #e040fb 40%, #00f5ff 100%)",
                   WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                  ,
                   animation: glitching ? "glitch 0.3s steps(2) both" : "flicker 8s infinite",
                 }}>CYBERSNATCHER</h1>
               </div>
