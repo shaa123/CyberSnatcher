@@ -146,10 +146,10 @@ pub fn parse_mpd(content: &str, base_url: &str) -> Result<DashManifest, String> 
                     is_drm: has_drm,
                 };
 
-                let is_video = mime.starts_with("video")
-                    || as_content_type == "video"
-                    || (height.is_some() && !mime.starts_with("audio"));
-                let is_audio = mime.starts_with("audio") || as_content_type == "audio";
+                let is_video = mime.starts_with(obfstr!("video"))
+                    || as_content_type == obfstr!("video")
+                    || (height.is_some() && !mime.starts_with(obfstr!("audio")));
+                let is_audio = mime.starts_with(obfstr!("audio")) || as_content_type == obfstr!("audio");
 
                 if is_video {
                     video_tracks.push(track);
@@ -368,7 +368,7 @@ fn find_base_url(node: &roxmltree::Node, parent_base: &str) -> String {
 }
 
 fn resolve_url(base: &str, relative: &str) -> String {
-    if relative.starts_with("http://") || relative.starts_with("https://") {
+    if relative.starts_with(obfstr!("http://")) || relative.starts_with(obfstr!("https://")) {
         return relative.to_string();
     }
     Url::parse(base)

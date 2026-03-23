@@ -244,7 +244,7 @@ fn parse_attr(tag: &str, name: &str) -> Option<String> {
 }
 
 fn resolve_url(base: &str, relative: &str) -> String {
-    if relative.starts_with("http://") || relative.starts_with("https://") {
+    if relative.starts_with(obfstr!("http://")) || relative.starts_with(obfstr!("https://")) {
         return relative.to_string();
     }
     Url::parse(base)
