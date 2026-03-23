@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { UrlAnalysis, ConversionPreset, MediaInfo } from "./types";
+import type { UrlAnalysis, ConversionPreset, MediaInfo, LicenseStatus } from "./types";
 
 // ── Existing commands ────────────────────────────────────────────────────────
 
@@ -33,6 +33,19 @@ export const listFolderContents = (path: string) => invoke<string[]>("list_folde
 export const openInExplorer = (path: string) => invoke<void>("open_in_explorer", { path });
 export const openFile = (path: string) => invoke<void>("open_file", { path });
 export const showInFolder = (path: string) => invoke<void>("show_in_folder", { path });
+
+// ── License commands ─────────────────────────────────────────────────────────
+
+export const activateLicense = (licenseKey: string) =>
+  invoke<LicenseStatus>("activate_license", { licenseKey });
+
+export const deactivateLicense = () =>
+  invoke<void>("deactivate_license");
+
+export const getLicenseStatus = () =>
+  invoke<LicenseStatus>("get_license_status");
+
+// ── File pickers ─────────────────────────────────────────────────────────────
 
 export async function pickFolder(): Promise<string | null> {
   try {

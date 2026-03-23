@@ -3,10 +3,12 @@ use obfstr::obfstr;
 mod commands;
 pub mod engine;
 pub mod ffmpeg;
+pub mod license;
 pub mod mp4patch;
 mod types;
 mod ytdlp;
 
+use license::LicenseState;
 use types::DownloadManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,6 +19,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(DownloadManager::new())
+        .manage(LicenseState::new())
         .invoke_handler(tauri::generate_handler![
             commands::analyze::analyze_url,
             commands::analyze::check_ytdlp,
@@ -36,6 +39,9 @@ pub fn run() {
             commands::settings::open_in_explorer,
             commands::settings::open_file,
             commands::settings::show_in_folder,
+            license::activate_license,
+            license::deactivate_license,
+            license::get_license_status,
         ])
         .run(tauri::generate_context!())
         .expect(obfstr!("error while running CyberSnatcher"));

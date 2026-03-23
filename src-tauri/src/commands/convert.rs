@@ -1,9 +1,10 @@
 use obfstr::obfstr;
 use crate::ffmpeg::{resolve_ffmpeg_path, run_ffmpeg_sync, ConversionPreset};
+use crate::license::{LicenseState, require_license_for_conversion};
 use crate::types::DownloadProgress;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[tauri::command]
 pub async fn check_ffmpeg(app: AppHandle) -> Result<bool, String> {
@@ -17,6 +18,10 @@ pub async fn convert_file(
     input_path: String,
     preset: ConversionPreset,
 ) -> Result<String, String> {
+    // Gate conversions behind license
+    let license = app.state::<LicenseState>();
+    require_license_for_conversion(&license)?;
+
     let app_clone = app.clone();
     let jid = job_id.clone();
 

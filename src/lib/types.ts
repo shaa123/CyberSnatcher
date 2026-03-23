@@ -41,6 +41,13 @@ export interface UrlAnalysis {
   qualities: string[];
 }
 
+export interface LicenseStatus {
+  activated: boolean;
+  license_key: string | null;
+  email: string | null;
+  product_name: string | null;
+}
+
 export interface MediaInfo {
   width: number;
   height: number;

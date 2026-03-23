@@ -1,4 +1,5 @@
 use obfstr::obfstr;
+use crate::license::{LicenseState, require_license_for_quality};
 use crate::types::{DownloadHandle, DownloadManager, DownloadProgress};
 use crate::ytdlp::{resolve_ytdlp_path, sanitize_filename};
 use crate::ffmpeg::resolve_ffmpeg_path;
@@ -25,6 +26,10 @@ pub async fn start_download(
     format_type: String,
     write_subs: Option<bool>,
 ) -> Result<(), String> {
+    // Gate high-quality downloads behind license
+    let license = app.state::<LicenseState>();
+    require_license_for_quality(&license, &format_quality)?;
+
     let bin = resolve_ytdlp_path(&app)?;
     let cancelled = Arc::new(AtomicBool::new(false));
 
