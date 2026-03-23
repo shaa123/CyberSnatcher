@@ -29,20 +29,20 @@ export default function EmptyState() {
       </div>
 
       <div className="text-center space-y-1.5">
-        <h2 className="text-lg font-semibold text-cyber-text-primary">
+        <h2 className="text-[17px] font-semibold text-cyber-text-primary">
           Paste a URL to start snatching
         </h2>
-        <p className="text-sm text-cyber-text-tertiary max-w-xs">
+        <p className="text-[17px] text-cyber-text-tertiary max-w-xs">
           Drop a YouTube link, HLS stream, or any video URL into the sidebar
         </p>
       </div>
 
       {/* Keyboard hint */}
       <div className="flex items-center gap-1.5 mt-2">
-        <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-cyber-card border border-cyber-border rounded text-cyber-text-tertiary">
+        <kbd className="px-1.5 py-0.5 text-[17px] font-mono bg-cyber-card border border-cyber-border rounded text-cyber-text-tertiary">
           Ctrl+V
         </kbd>
-        <span className="text-[10px] text-cyber-text-tertiary">
+        <span className="text-[17px] text-cyber-text-tertiary">
           in the URL field
         </span>
       </div>

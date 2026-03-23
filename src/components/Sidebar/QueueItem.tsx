@@ -45,19 +45,19 @@ export default function QueueItem({ item, isSelected, onSelect }: QueueItemProps
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-cyber-text-primary truncate">
+          <p className="text-[17px] font-medium text-cyber-text-primary truncate">
             {item.title}
           </p>
           <div className="flex items-center gap-1.5 mt-1">
             <span
-              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${statusColors} ${
+              className={`text-[17px] font-semibold px-1.5 py-0.5 rounded ${statusColors} ${
                 isDownloading ? "status-downloading" : ""
               }`}
             >
               {statusLabel}
             </span>
             {isDownloading && (
-              <span className="text-[10px] text-cyber-text-secondary">
+              <span className="text-[17px] text-cyber-text-secondary">
                 {item.speed}
               </span>
             )}

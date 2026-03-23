@@ -168,7 +168,7 @@ input:focus, textarea:focus {
 
 /* Platform badge */
 .platform-badge {
-  font-size: 9px; padding: 2px 8px; border-radius: 2px;
+  font-size: 17px; padding: 2px 8px; border-radius: 2px;
   letter-spacing: 1px;
 }
 

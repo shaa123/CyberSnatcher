@@ -7,7 +7,7 @@ export default function QueueList() {
   if (items.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-4">
-        <p className="text-xs text-cyber-text-tertiary text-center">
+        <p className="text-[17px] text-cyber-text-tertiary text-center">
           No downloads yet.
           <br />
           Paste a URL above to get started.

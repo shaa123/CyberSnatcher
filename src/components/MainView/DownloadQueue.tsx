@@ -21,7 +21,7 @@ export default function DownloadQueue() {
   if (items.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-xs text-cyber-text-tertiary text-center px-8">
+        <p className="text-[17px] text-cyber-text-tertiary text-center px-8">
           Paste a URL above and hit Snatch to start downloading
         </p>
       </div>
@@ -45,16 +45,16 @@ export default function DownloadQueue() {
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-cyber-text-primary truncate font-medium">
+                <p className="text-[17px] text-cyber-text-primary truncate font-medium">
                   {item.title}
                 </p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${badge.cls}`}>
+                  <span className={`text-[17px] font-semibold px-1.5 py-0.5 rounded ${badge.cls}`}>
                     {badge.text}
                   </span>
-                  <span className="text-[10px] text-cyber-text-tertiary">{item.site_name}</span>
+                  <span className="text-[17px] text-cyber-text-tertiary">{item.site_name}</span>
                   {isActive && item.speed !== "—" && (
-                    <span className="text-[10px] text-cyber-text-secondary font-mono">{item.speed}</span>
+                    <span className="text-[17px] text-cyber-text-secondary font-mono">{item.speed}</span>
                   )}
                 </div>
               </div>
@@ -62,7 +62,7 @@ export default function DownloadQueue() {
                 {isActive && (
                   <button
                     onClick={(e) => { e.stopPropagation(); cancelDownload(item.id); }}
-                    className="text-cyber-text-tertiary hover:text-cyber-error text-xs transition-colors p-1"
+                    className="text-cyber-text-tertiary hover:text-cyber-error text-[17px] transition-colors p-1"
                     title="Cancel"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -73,7 +73,7 @@ export default function DownloadQueue() {
                 {!isActive && (
                   <button
                     onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
-                    className="text-cyber-text-tertiary hover:text-cyber-error text-xs transition-colors p-1"
+                    className="text-cyber-text-tertiary hover:text-cyber-error text-[17px] transition-colors p-1"
                     title="Remove"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -88,7 +88,7 @@ export default function DownloadQueue() {
                 <div className="flex-1">
                   <ProgressBar progress={item.progress} />
                 </div>
-                <span className="text-[10px] font-mono text-cyber-primary shrink-0">
+                <span className="text-[17px] font-mono text-cyber-primary shrink-0">
                   {Math.round(item.progress)}%
                 </span>
               </div>

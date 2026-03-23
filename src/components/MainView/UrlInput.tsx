@@ -80,10 +80,10 @@ export default function UrlInput() {
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSnatch()}
           placeholder="Paste any URL..."
-          className="w-full bg-cyber-surface border border-cyber-border rounded-lg px-4 py-3 text-sm text-cyber-text-primary placeholder:text-cyber-text-tertiary font-mono transition-all hover:border-cyber-primary/30 focus:border-cyber-primary/50"
+          className="w-full bg-cyber-surface border border-cyber-border rounded-lg px-4 py-3 text-[17px] text-cyber-text-primary placeholder:text-cyber-text-tertiary font-mono transition-all hover:border-cyber-primary/30 focus:border-cyber-primary/50"
         />
         {badge && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold px-2 py-0.5 rounded bg-cyber-primary/15 text-cyber-primary border border-cyber-primary/20">
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[17px] font-semibold px-2 py-0.5 rounded bg-cyber-primary/15 text-cyber-primary border border-cyber-primary/20">
             {badge}
           </span>
         )}
@@ -91,7 +91,7 @@ export default function UrlInput() {
       <button
         onClick={handleSnatch}
         disabled={!url.trim() || loading}
-        className="btn-shimmer w-full mt-2 bg-cyber-primary hover:bg-cyber-primary-hover disabled:bg-cyber-card disabled:text-cyber-text-tertiary text-white font-semibold text-sm py-2.5 rounded-lg transition-all disabled:cursor-not-allowed"
+        className="btn-shimmer w-full mt-2 bg-cyber-primary hover:bg-cyber-primary-hover disabled:bg-cyber-card disabled:text-cyber-text-tertiary text-white font-semibold text-[17px] py-2.5 rounded-lg transition-all disabled:cursor-not-allowed"
       >
         <span className="flex items-center justify-center gap-2">
           {loading ? (

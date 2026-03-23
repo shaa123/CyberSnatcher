@@ -33,21 +33,21 @@ export default function DownloadView({ item }: DownloadViewProps) {
       {/* Header */}
       <div className="mb-5">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyber-primary/15 text-cyber-primary border border-cyber-primary/20">
+          <span className="text-[17px] font-semibold px-1.5 py-0.5 rounded bg-cyber-primary/15 text-cyber-primary border border-cyber-primary/20">
             {item.site_name}
           </span>
-          <span className="text-[10px] text-cyber-text-tertiary font-mono truncate">
+          <span className="text-[17px] text-cyber-text-tertiary font-mono truncate">
             {item.url}
           </span>
         </div>
-        <h1 className="text-xl font-bold text-cyber-text-primary">{item.title}</h1>
+        <h1 className="text-[17px] font-bold text-cyber-text-primary">{item.title}</h1>
       </div>
 
       {/* Large progress bar */}
       <div className="mb-2">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-cyber-text-secondary">Progress</span>
-          <span className="text-sm font-semibold font-mono text-cyber-primary">
+          <span className="text-[17px] text-cyber-text-secondary">Progress</span>
+          <span className="text-[17px] font-semibold font-mono text-cyber-primary">
             {item.progress}%
           </span>
         </div>
@@ -69,31 +69,31 @@ export default function DownloadView({ item }: DownloadViewProps) {
       <div className="flex gap-2 mb-4">
         {isActive && (
           <>
-            <button className="btn-shimmer px-4 py-2 text-sm font-medium bg-cyber-card border border-cyber-border rounded-lg text-cyber-text-primary hover:bg-cyber-card-hover hover:border-cyber-primary/30 transition-all">
+            <button className="btn-shimmer px-4 py-2 text-[17px] font-medium bg-cyber-card border border-cyber-border rounded-lg text-cyber-text-primary hover:bg-cyber-card-hover hover:border-cyber-primary/30 transition-all">
               Pause
             </button>
-            <button className="px-4 py-2 text-sm font-medium bg-cyber-error/10 border border-cyber-error/20 rounded-lg text-cyber-error hover:bg-cyber-error/20 transition-all">
+            <button className="px-4 py-2 text-[17px] font-medium bg-cyber-error/10 border border-cyber-error/20 rounded-lg text-cyber-error hover:bg-cyber-error/20 transition-all">
               Cancel
             </button>
           </>
         )}
         {isPaused && (
-          <button className="btn-shimmer px-4 py-2 text-sm font-medium bg-cyber-primary rounded-lg text-white hover:bg-cyber-primary-hover transition-all">
+          <button className="btn-shimmer px-4 py-2 text-[17px] font-medium bg-cyber-primary rounded-lg text-white hover:bg-cyber-primary-hover transition-all">
             Resume
           </button>
         )}
         {isDone && (
-          <button className="btn-shimmer px-4 py-2 text-sm font-medium bg-cyber-success/10 border border-cyber-success/20 rounded-lg text-cyber-success hover:bg-cyber-success/20 transition-all">
+          <button className="btn-shimmer px-4 py-2 text-[17px] font-medium bg-cyber-success/10 border border-cyber-success/20 rounded-lg text-cyber-success hover:bg-cyber-success/20 transition-all">
             Open File
           </button>
         )}
         {isFailed && (
           <>
-            <button className="btn-shimmer px-4 py-2 text-sm font-medium bg-cyber-primary rounded-lg text-white hover:bg-cyber-primary-hover transition-all">
+            <button className="btn-shimmer px-4 py-2 text-[17px] font-medium bg-cyber-primary rounded-lg text-white hover:bg-cyber-primary-hover transition-all">
               Retry
             </button>
             {failedError && (
-              <span className="flex items-center text-xs text-cyber-error font-mono">
+              <span className="flex items-center text-[17px] text-cyber-error font-mono">
                 {failedError}
               </span>
             )}
@@ -105,7 +105,7 @@ export default function DownloadView({ item }: DownloadViewProps) {
       <div className="flex-1 min-h-0">
         <button
           onClick={() => setShowLogs(!showLogs)}
-          className="flex items-center gap-1.5 text-xs text-cyber-text-tertiary hover:text-cyber-text-secondary transition-colors mb-2"
+          className="flex items-center gap-1.5 text-[17px] text-cyber-text-tertiary hover:text-cyber-text-secondary transition-colors mb-2"
         >
           <svg
             width="12"
