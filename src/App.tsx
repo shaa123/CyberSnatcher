@@ -72,7 +72,7 @@ export default function App() {
   const [writeSubs, setWriteSubs] = useState(false);
   const [duplicateUrl, setDuplicateUrl] = useState<string | null>(null);
   const [smartMode, setSmartMode] = useState(true);
-  const addLog = useCallback((_msg: string) => {}, []);
+  const addLog = useCallback((msg: string) => { console.log("[CyberSnatcher]", msg); }, []);
 
   useEffect(() => {
     const iv = setInterval(() => {
