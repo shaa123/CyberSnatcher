@@ -2,9 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { downloadDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar";
-import BrowserTab from "./components/BrowserTab";
 import SettingsModal from "./components/Settings/SettingsModal";
-import { analyzeUrl, startDownload, cancelDownload, checkYtdlp, checkFfmpeg, showInFolder, openFile, convertFile, nativeDownload, updateYtdlp, hideBrowser, showBrowser } from "./lib/tauri";
+import { analyzeUrl, startDownload, cancelDownload, checkYtdlp, checkFfmpeg, showInFolder, openFile, convertFile, nativeDownload, updateYtdlp } from "./lib/tauri";
 import type { DownloadProgress, DownloadItem, ConversionPreset } from "./lib/types";
 
 const FORMATS = ["Default", "MP4", "MP3 Audio", "WEBM", "MKV"];
@@ -44,8 +43,6 @@ function formatToQuality(f: string, qualityIdx: number): string {
 }
 
 export default function App() {
-  // ── Tab state ──
-  const [activeTab, setActiveTab] = useState<"download" | "browser">("download");
   const [showSettings, setShowSettings] = useState(false);
 
   // ── All existing state (unchanged) ──
@@ -125,8 +122,6 @@ export default function App() {
   useEffect(() => {
     const unlisten = listen<DownloadProgress>("download-progress", (event) => {
       const p = event.payload;
-      // Ignore browser-tab downloads — BrowserTab handles its own progress
-      if (p.job_id?.startsWith("browser-")) return;
       if (p.job_id !== currentJobId && currentJobId) return;
 
       if (p.log_line && !p.log_line.startsWith("CYBERPROG")) {
@@ -158,80 +153,6 @@ export default function App() {
     });
     return () => { unlisten.then((fn) => fn()); };
   }, [currentJobId, addLog, url, videoTitle, videoPlatform, downloadFolder, format]);
-
-  // ── Tab switching: show/hide browser webview ──
-  useEffect(() => {
-    if (activeTab === "browser") {
-      showBrowser().catch(() => {});
-    } else {
-      hideBrowser().catch(() => {});
-    }
-  }, [activeTab]);
-
-  // ── Browser download callbacks ──
-  const handleBrowserDownloadDirect = useCallback(async (videoUrl: string, title: string) => {
-    setActiveTab("download");
-    setUrl(videoUrl);
-    setVideoTitle(title);
-    setPhase("downloading");
-
-    setProgress(0);
-    setFilePath(null);
-    setFileSize(null);
-    const jobId = `dl-${Date.now()}`;
-    setCurrentJobId(jobId);
-    const safeName = title.replace(/[<>:"/\\|?*]/g, "_").slice(0, 100) || "download";
-    addLog(`Browser capture → downloading ${safeName}...`);
-    try {
-      const result = await nativeDownload(jobId, videoUrl, downloadFolder, safeName);
-      setFilePath(result);
-      setProgress(100);
-      setPhase("done");
-      addLog("EXTRACTION COMPLETE ✓");
-    } catch (e) {
-      addLog(`ERR: ${e}`);
-      setPhase("error");
-      setTimeout(() => setPhase("idle"), 2500);
-    }
-  }, [downloadFolder, addLog]);
-
-  const handleBrowserDownloadNative = useCallback(async (videoUrl: string, title: string) => {
-    setActiveTab("download");
-    setUrl(videoUrl);
-    setVideoTitle(title);
-    setPhase("downloading");
-
-    setProgress(0);
-    setFilePath(null);
-    setFileSize(null);
-    const jobId = `dl-${Date.now()}`;
-    setCurrentJobId(jobId);
-    const safeName = title.replace(/[<>:"/\\|?*]/g, "_").slice(0, 100) || "download";
-    addLog(`Browser capture → downloading stream ${safeName}...`);
-    try {
-      const result = await nativeDownload(jobId, videoUrl, downloadFolder, safeName);
-      setFilePath(result);
-      setProgress(100);
-      setPhase("done");
-      addLog("EXTRACTION COMPLETE ✓");
-    } catch (e) {
-      const errStr = String(e);
-      if (errStr === "USE_YTDLP") {
-        addLog("Falling back to yt-dlp...");
-        try {
-          await startDownload(jobId, videoUrl, safeName, downloadFolder, "best", "Default");
-        } catch (e2) {
-          addLog(`ERR: ${e2}`);
-          setPhase("error");
-          setTimeout(() => setPhase("idle"), 2500);
-        }
-      } else {
-        addLog(`ERR: ${e}`);
-        setPhase("error");
-        setTimeout(() => setPhase("idle"), 2500);
-      }
-    }
-  }, [downloadFolder, addLog]);
 
   // ── Duplicate detection ──
   const checkDuplicate = useCallback((targetUrl: string): boolean => {
@@ -428,44 +349,14 @@ export default function App() {
       <div style={{ position: "fixed", top: "-100px", right: "-100px", width: "400px", height: "400px", borderRadius: "50%", background: "radial-gradient(circle, #b400ff18 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
       <div style={{ position: "fixed", bottom: "-150px", left: "-150px", width: "500px", height: "500px", borderRadius: "50%", background: "radial-gradient(circle, #00f5ff12 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
 
-      {/* ── TAB BAR ── */}
+      {/* ── Settings button ── */}
       <div style={{
-        display: "flex", alignItems: "center", gap: "0",
+        display: "flex", alignItems: "center",
         borderBottom: "1px solid var(--border-purple)",
         background: "var(--panel)", flexShrink: 0,
         position: "relative", zIndex: 2,
-        paddingLeft: "12px",
+        justifyContent: "flex-end",
       }}>
-        {(["download", "browser"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              padding: "10px 24px",
-              background: activeTab === tab ? "#b400ff15" : "transparent",
-              border: "none",
-              borderBottom: activeTab === tab ? "2px solid #b400ff" : "2px solid transparent",
-              color: activeTab === tab ? "#e040fb" : "var(--text-dim)",
-              fontFamily: "'Orbitron', sans-serif",
-              fontSize: "11px",
-              fontWeight: 700,
-              letterSpacing: "3px",
-              cursor: "pointer",
-              transition: "all 0.2s",
-            }}
-          >
-            {tab === "download" ? "◈ DOWNLOAD" : "◈ BROWSER"}
-          </button>
-        ))}
-        <div style={{ flex: 1 }} />
-        {activeTab === "browser" && (
-          <span style={{
-            fontSize: "9px", color: "var(--text-dimmer)", letterSpacing: "1px",
-            marginRight: "8px",
-          }}>
-            Videos auto-detected while browsing
-          </span>
-        )}
         <button
           onClick={() => setShowSettings(true)}
           title="Settings"
@@ -489,17 +380,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* ── BROWSER TAB ── */}
-      <BrowserTab
-        visible={activeTab === "browser"}
-        downloadFolder={downloadFolder}
-        onDownloadDirect={handleBrowserDownloadDirect}
-        onDownloadNative={handleBrowserDownloadNative}
-      />
-
-      {/* ── DOWNLOAD TAB (existing UI, unchanged) ── */}
-      {activeTab === "download" && (
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 30px", position: "relative", zIndex: 2 }}>
           <div style={{ width: "100%", maxWidth: "700px" }}>
 
             {/* Header */}
@@ -861,7 +742,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
 
       {/* Duplicate Detection Modal */}
       {duplicateUrl && (

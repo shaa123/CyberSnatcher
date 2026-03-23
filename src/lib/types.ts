@@ -1,13 +1,3 @@
-export interface DetectedVideo {
-  url: string;
-  video_type: "direct" | "hls" | "dash";
-  label: string;
-  page_url: string;
-  page_title: string;
-  file_size?: number | null;
-  cookies?: string | null;
-}
-
 export interface DownloadProgress {
   job_id: string;
   percent: number;

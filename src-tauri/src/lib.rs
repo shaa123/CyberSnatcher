@@ -1,13 +1,10 @@
 mod commands;
-pub mod dash;
 pub mod engine;
 pub mod ffmpeg;
-pub mod hls;
 pub mod mp4patch;
 mod types;
 mod ytdlp;
 
-use commands::browser::BrowserState;
 use types::DownloadManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,9 +15,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(DownloadManager::new())
-        .manage(BrowserState::new())
         .invoke_handler(tauri::generate_handler![
-            // Existing commands
             commands::analyze::analyze_url,
             commands::analyze::check_ytdlp,
             commands::analyze::get_ytdlp_version,
@@ -39,25 +34,6 @@ pub fn run() {
             commands::settings::open_in_explorer,
             commands::settings::open_file,
             commands::settings::show_in_folder,
-            // Browser commands
-            commands::browser::open_browser_view,
-            commands::browser::navigate_browser,
-            commands::browser::resize_browser,
-            commands::browser::close_browser,
-            commands::browser::browser_go_back,
-            commands::browser::browser_go_forward,
-            commands::browser::browser_refresh,
-            commands::browser::get_detected_videos,
-            commands::browser::show_browser,
-            commands::browser::hide_browser,
-            commands::browser::get_browser_cookies,
-            commands::browser::remove_detected_video,
-            // Stream commands
-            commands::stream::parse_hls,
-            commands::stream::download_hls_stream,
-            commands::stream::download_hls_live_stream,
-            commands::stream::parse_dash,
-            commands::stream::download_dash_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CyberSnatcher");
