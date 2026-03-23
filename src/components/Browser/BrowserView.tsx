@@ -11,6 +11,10 @@ import BrowserBar from "./BrowserBar";
 import DetectedVideos from "./DetectedVideos";
 import type { DetectedStream } from "../../lib/types";
 
+function getOrigin(url: string): string {
+  try { return new URL(url).origin; } catch { return url; }
+}
+
 interface BrowserViewProps {
   settingsOpen: boolean;
 }
@@ -20,10 +24,12 @@ export default function BrowserView({ settingsOpen }: BrowserViewProps) {
   const setIsLoading = useBrowserStore((s) => s.setIsLoading);
   const addDetectedStream = useBrowserStore((s) => s.addDetectedStream);
   const browserSettings = useBrowserStore((s) => s.browserSettings);
+  const clearDetectedStreams = useBrowserStore((s) => s.clearDetectedStreams);
   const browserUrl = useBrowserStore((s) => s.browserUrl);
   const streams = useBrowserStore((s) => s.detectedStreams);
   const webviewAreaRef = useRef<HTMLDivElement>(null);
   const webviewCreatedRef = useRef(false);
+  const lastOriginRef = useRef(getOrigin(browserUrl));
 
   // Create webview on mount
   useEffect(() => {
@@ -80,7 +86,15 @@ export default function BrowserView({ settingsOpen }: BrowserViewProps) {
   // Listen for browser events from Rust
   useEffect(() => {
     const unlistenNav = listen<{ url: string }>("browser-navigated", (e) => {
-      setBrowserUrl(e.payload.url);
+      const newUrl = e.payload.url;
+      setBrowserUrl(newUrl);
+
+      // Clear detected streams when navigating to a different site
+      const newOrigin = getOrigin(newUrl);
+      if (newOrigin !== lastOriginRef.current) {
+        clearDetectedStreams();
+        lastOriginRef.current = newOrigin;
+      }
     });
     const unlistenLoading = listen<{ loading: boolean }>(
       "browser-loading",
@@ -92,7 +106,7 @@ export default function BrowserView({ settingsOpen }: BrowserViewProps) {
       unlistenNav.then((fn) => fn());
       unlistenLoading.then((fn) => fn());
     };
-  }, [setBrowserUrl, setIsLoading]);
+  }, [setBrowserUrl, setIsLoading, clearDetectedStreams]);
 
   // Listen for stream detection events
   const handleStreamDetected = useCallback(
@@ -103,7 +117,8 @@ export default function BrowserView({ settingsOpen }: BrowserViewProps) {
           pageUrl,
           streamType,
           browserSettings.minDuration,
-          browserSettings.minFileSize
+          browserSettings.minFileSize,
+          pageTitle
         );
         if (result) {
           const stream: DetectedStream = {

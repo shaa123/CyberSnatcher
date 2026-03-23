@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { useBrowserStore } from "../../stores/browserStore";
 import { useDownloadStore } from "../../stores/downloadStore";
 import { startBrowserDownload } from "../../lib/tauri";
@@ -35,8 +35,8 @@ export default function DetectedVideos() {
 
   // Track download progress per stream (by stream id)
   const [downloads, setDownloads] = useState<Record<string, DownloadState>>({});
-  // Map jobId -> streamId for progress routing
-  const [jobToStream, setJobToStream] = useState<Record<string, string>>({});
+  // Map jobId -> streamId for progress routing (ref to avoid re-renders)
+  const jobToStreamRef = useRef<Record<string, string>>({});
 
   // Listen for browser download progress events
   useEffect(() => {
@@ -44,45 +44,40 @@ export default function DetectedVideos() {
       const p = event.payload;
       if (!p.job_id.startsWith("browser-")) return;
 
-      // Find which stream this job belongs to
-      setJobToStream((mapping) => {
-        const streamId = mapping[p.job_id];
-        if (!streamId) return mapping;
+      const streamId = jobToStreamRef.current[p.job_id];
+      if (!streamId) return;
 
-        setDownloads((prev) => {
-          const current = prev[streamId];
-          if (!current) return prev;
+      setDownloads((prev) => {
+        const current = prev[streamId];
+        if (!current) return prev;
 
-          if (p.status === "complete") {
-            return {
-              ...prev,
-              [streamId]: { ...current, percent: 100, status: "complete", speed: "", filePath: p.file_path || undefined },
-            };
-          } else if (p.status === "error" || p.status === "cancelled") {
-            return {
-              ...prev,
-              [streamId]: { ...current, status: "error", speed: p.log_line || "Error" },
-            };
-          } else if (p.status === "converting") {
-            return {
-              ...prev,
-              [streamId]: { ...current, percent: 95, status: "converting", speed: "Muxing..." },
-            };
-          } else if (p.percent >= 0) {
-            return {
-              ...prev,
-              [streamId]: {
-                ...current,
-                percent: p.percent,
-                speed: p.speed || current.speed,
-                status: "downloading",
-              },
-            };
-          }
-          return prev;
-        });
-
-        return mapping;
+        if (p.status === "complete") {
+          return {
+            ...prev,
+            [streamId]: { ...current, percent: 100, status: "complete", speed: "", filePath: p.file_path || undefined },
+          };
+        } else if (p.status === "error" || p.status === "cancelled") {
+          return {
+            ...prev,
+            [streamId]: { ...current, status: "error", speed: p.log_line || "Error" },
+          };
+        } else if (p.status === "converting") {
+          return {
+            ...prev,
+            [streamId]: { ...current, percent: 95, status: "converting", speed: "Muxing..." },
+          };
+        } else if (p.percent >= 0) {
+          return {
+            ...prev,
+            [streamId]: {
+              ...current,
+              percent: p.percent,
+              speed: p.speed || current.speed,
+              status: "downloading",
+            },
+          };
+        }
+        return prev;
       });
     });
     return () => { unlisten.then((fn) => fn()); };
@@ -96,7 +91,7 @@ export default function DetectedVideos() {
         "browser_download";
 
       // Register job -> stream mapping
-      setJobToStream((prev) => ({ ...prev, [jobId]: stream.id }));
+      jobToStreamRef.current = { ...jobToStreamRef.current, [jobId]: stream.id };
       setDownloads((prev) => ({
         ...prev,
         [stream.id]: { jobId, percent: 0, speed: "Starting...", status: "downloading" },

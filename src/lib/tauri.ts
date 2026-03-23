@@ -83,11 +83,12 @@ export const validateStream = (
   pageUrl: string,
   streamType: string,
   minDuration: number,
-  minFileSize: number
+  minFileSize: number,
+  pageTitle?: string
 ) =>
   invoke<{ title: string; duration: number | null; size: number | null; qualities: string[] } | null>(
     "validate_stream",
-    { manifestUrl, pageUrl, streamType, minDuration, minFileSize }
+    { manifestUrl, pageUrl, streamType, minDuration, minFileSize, pageTitle: pageTitle || null }
   );
 
 // ── Browser download (NO yt-dlp) ────────────────────────────────────────────

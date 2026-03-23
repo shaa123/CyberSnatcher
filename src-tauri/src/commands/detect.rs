@@ -18,6 +18,8 @@ pub async fn validate_stream(
     stream_type: String,
     min_duration: f64,
     min_file_size: u64,
+    #[allow(unused_variables)]
+    page_title: Option<String>,
 ) -> Result<Option<StreamValidation>, String> {
     let client = Arc::new(
         VideoClient::new()
@@ -60,13 +62,18 @@ pub async fn validate_stream(
         return Ok(None);
     }
 
-    let title = page_url
-        .replace("https://", "")
-        .replace("http://", "")
-        .split('/')
-        .next()
-        .unwrap_or("Unknown")
-        .to_string();
+    // Prefer the page title from the browser JS, fall back to domain
+    let title = page_title
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| {
+            page_url
+                .replace("https://", "")
+                .replace("http://", "")
+                .split('/')
+                .next()
+                .unwrap_or("Unknown")
+                .to_string()
+        });
 
     Ok(Some(StreamValidation {
         title,

@@ -50,6 +50,8 @@ export default function BrowserBar({ onFocus, onBlur }: BrowserBarProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const handleNavigate = useCallback(() => {
     let target = urlInput.trim();
     if (!target) return;
@@ -62,6 +64,8 @@ export default function BrowserBar({ onFocus, onBlur }: BrowserBarProps) {
     }
     setBrowserUrl(target);
     navigateBrowser(target).catch(() => {});
+    // Blur the input so the webview becomes visible again
+    inputRef.current?.blur();
   }, [urlInput, setBrowserUrl]);
 
   const toggleFavorite = useCallback(async () => {
@@ -163,6 +167,7 @@ export default function BrowserBar({ onFocus, onBlur }: BrowserBarProps) {
           />
         )}
         <input
+          ref={inputRef}
           value={urlInput}
           onChange={(e) => setUrlInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleNavigate()}
