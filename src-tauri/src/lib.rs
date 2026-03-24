@@ -5,6 +5,7 @@ pub mod engine;
 pub mod ffmpeg;
 pub mod license;
 pub mod mp4patch;
+pub mod scraper;
 mod types;
 mod ytdlp;
 
@@ -51,6 +52,9 @@ pub fn run() {
             commands::settings::open_in_explorer,
             commands::settings::open_file,
             commands::settings::show_in_folder,
+            commands::scraper::start_scrape,
+            commands::scraper::export_scrape_data,
+            commands::scraper::preview_scrape,
             license::activate_license,
             license::deactivate_license,
             license::get_license_status,

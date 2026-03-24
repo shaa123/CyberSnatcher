@@ -35,6 +35,9 @@ xcap = "0.8"
 gif = "0.13"
 image = "0.25"
 roxmltree = "0.20"
+scraper = "0.22"
+csv = "1.3"
+regex = "1"
 obfstr = "0.4"
 zeroize = { version = "1", features = ["derive"] }
 

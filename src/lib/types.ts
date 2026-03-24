@@ -57,3 +57,52 @@ export interface MediaInfo {
   bit_rate: string;
   nb_frames: string;
 }
+
+// ── Scraper types ───────────────────────────────────────────────────────────
+
+export interface FieldRule {
+  name: string;
+  css_selector: string;
+  extract: string;
+  regex_filter: string | null;
+}
+
+export interface CrawlRule {
+  link_selector: string;
+  url_pattern: string | null;
+}
+
+export interface SpiderConfig {
+  name: string;
+  start_urls: string[];
+  field_rules: FieldRule[];
+  crawl_rules: CrawlRule[];
+  max_pages: number;
+  concurrency: number;
+  request_delay_ms: number;
+  respect_robots: boolean;
+  user_agent: string | null;
+  headers: Record<string, string>;
+}
+
+export interface ScrapedItem {
+  fields: Record<string, string>;
+}
+
+export interface ScrapeProgress {
+  job_id: string;
+  pages_crawled: number;
+  pages_total: number;
+  items_scraped: number;
+  current_url: string;
+  status: string;
+  log_line: string;
+}
+
+export interface ScrapeResult {
+  job_id: string;
+  items: ScrapedItem[];
+  pages_crawled: number;
+  errors: string[];
+  export_path: string | null;
+}

@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar";
 import SettingsModal from "./components/Settings/SettingsModal";
 import ConverterTab from "./components/ConverterTab";
+import ScraperTab from "./components/ScraperTab";
 import { analyzeUrl, startDownload, cancelDownload, checkYtdlp, checkFfmpeg, showInFolder, openFile, convertFile, nativeDownload, updateYtdlp } from "./lib/tauri";
 import type { DownloadProgress, DownloadItem, ConversionPreset } from "./lib/types";
 
@@ -45,7 +46,7 @@ function formatToQuality(f: string, qualityIdx: number): string {
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const [activeTab, setActiveTab] = useState<"downloader" | "converter">("downloader");
+  const [activeTab, setActiveTab] = useState<"downloader" | "converter" | "scraper">("downloader");
   // ── All existing state (unchanged) ──
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState("Default");
@@ -392,6 +393,22 @@ export default function App() {
           >
             CONVERTER
           </button>
+          <button
+            onClick={() => setActiveTab("scraper")}
+            style={{
+              background: activeTab === "scraper" ? "#39ff1412" : "transparent",
+              border: "none",
+              borderBottom: activeTab === "scraper" ? "2px solid #39ff14" : "2px solid transparent",
+              cursor: "pointer",
+              padding: "10px 20px",
+              color: activeTab === "scraper" ? "#39ff14" : "var(--text-dim)",
+              fontFamily: "system-ui, -apple-system, sans-serif",
+              fontSize: "17px", fontWeight: 700,
+              transition: "all 0.2s",
+            }}
+          >
+            SCRAPER
+          </button>
         </div>
         <button
           onClick={() => setShowSettings(true)}
@@ -421,6 +438,9 @@ export default function App() {
 
         {/* ── Converter Tab ── */}
         {activeTab === "converter" && <ConverterTab />}
+
+        {/* ── Scraper Tab ── */}
+        {activeTab === "scraper" && <ScraperTab />}
 
         {/* ── Downloader Tab ── */}
         {activeTab === "downloader" && (

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { UrlAnalysis, ConversionPreset, MediaInfo, LicenseStatus } from "./types";
+import type { UrlAnalysis, ConversionPreset, MediaInfo, LicenseStatus, SpiderConfig, FieldRule, ScrapedItem, ScrapeResult } from "./types";
 
 // ── Existing commands ────────────────────────────────────────────────────────
 
@@ -44,6 +44,17 @@ export const deactivateLicense = () =>
 
 export const getLicenseStatus = () =>
   invoke<LicenseStatus>("get_license_status");
+
+// ── Scraper commands ─────────────────────────────────────────────────────────
+
+export const startScrape = (jobId: string, config: SpiderConfig) =>
+  invoke<ScrapeResult>("start_scrape", { jobId, config });
+
+export const previewScrape = (url: string, fieldRules: FieldRule[], itemSelector?: string) =>
+  invoke<ScrapedItem[]>("preview_scrape", { url, fieldRules, itemSelector: itemSelector || null });
+
+export const exportScrapeData = (items: ScrapedItem[], outputPath: string, format: string) =>
+  invoke<string>("export_scrape_data", { items, outputPath, format });
 
 // ── File pickers ─────────────────────────────────────────────────────────────
 
